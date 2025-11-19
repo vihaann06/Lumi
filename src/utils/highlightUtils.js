@@ -199,14 +199,16 @@ export const findPageForSelection = (clientRects, pages, currentPageInView) => {
 /**
  * Create a new highlight object
  */
-export const createHighlight = (text, highlightRects) => {
+export const createHighlight = (text, highlightRects, aiType = null, aiContent = null) => {
   const highlightId = Date.now();
   
   return {
     id: highlightId,
     text,
     timestamp: highlightId,
-    rects: highlightRects
+    rects: highlightRects,
+    aiType, // 'explanation' or 'summary'
+    aiContent // The AI-generated content
   };
 };
 

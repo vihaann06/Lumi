@@ -8,7 +8,7 @@ export const useHighlights = (currentPageInView, pdfContainerRef) => {
   const [highlights, setHighlights] = useState({});
   const [selectedHighlightId, setSelectedHighlightId] = useState(null);
 
-  const addHighlight = (selectedText, selectedRange, currentPageInView) => {
+  const addHighlight = (selectedText, selectedRange, currentPageInView, aiType = null, aiContent = null) => {
     if (!selectedText || !selectedRange) return;
 
     const clientRects = selectedRange.getClientRects();
@@ -29,7 +29,7 @@ export const useHighlights = (currentPageInView, pdfContainerRef) => {
     let highlightRects = calculateHighlightRects(clientRects, pageRect);
     // Merge overlapping rectangles within the highlight
     highlightRects = mergeOverlappingRects(highlightRects);
-    const newHighlight = createHighlight(selectedText, highlightRects);
+    const newHighlight = createHighlight(selectedText, highlightRects, aiType, aiContent);
     const currentPageHighlights = highlights[pageNum] || [];
 
     setHighlights({

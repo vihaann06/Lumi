@@ -4,14 +4,14 @@ import { getAIExplanation, getAISummary, getReferenceCheck } from '../services/o
 /**
  * Custom hook for AI actions (explanation, summary, reference check)
  */
-export const useAIActions = () => {
+export const useAIActions = (onCreateAIHighlight = null) => {
   const [explanation, setExplanation] = useState('');
   const [summary, setSummary] = useState('');
   const [referenceCheck, setReferenceCheck] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeAction, setActiveAction] = useState(null);
 
-  const handleAIExplain = async (selectedText) => {
+  const handleAIExplain = async (selectedText, selectedRange = null, currentPageInView = null) => {
     if (!selectedText) return;
     
     setIsLoading(true);
@@ -22,6 +22,11 @@ export const useAIActions = () => {
     try {
       const result = await getAIExplanation(selectedText);
       setExplanation(result);
+      
+      // Create AI highlight if callback is provided
+      if (onCreateAIHighlight && selectedRange && currentPageInView) {
+        onCreateAIHighlight(selectedText, selectedRange, currentPageInView, 'explanation', result);
+      }
     } catch (error) {
       setExplanation('Sorry, there was an error getting the explanation. Please try again.');
       console.error('Error:', error);
@@ -31,7 +36,7 @@ export const useAIActions = () => {
     }
   };
 
-  const handleAISummary = async (selectedText) => {
+  const handleAISummary = async (selectedText, selectedRange = null, currentPageInView = null) => {
     if (!selectedText) return;
     
     setIsLoading(true);
@@ -42,6 +47,11 @@ export const useAIActions = () => {
     try {
       const result = await getAISummary(selectedText);
       setSummary(result);
+      
+      // Create AI highlight if callback is provided
+      if (onCreateAIHighlight && selectedRange && currentPageInView) {
+        onCreateAIHighlight(selectedText, selectedRange, currentPageInView, 'summary', result);
+      }
     } catch (error) {
       setSummary('Sorry, there was an error getting the summary. Please try again.');
       console.error('Error:', error);

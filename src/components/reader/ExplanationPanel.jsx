@@ -49,17 +49,33 @@ export default function ExplanationPanel({
       <div className="p-4 flex-1">
         {(selectedText || selectedHighlight) && (
           <div className={`mb-4 p-3 rounded-lg border ${
-            selectedHighlight 
-              ? 'bg-yellow-50 border-yellow-200' 
+            selectedHighlight?.aiType === 'explanation'
+              ? 'bg-blue-50 border-blue-200'
+              : selectedHighlight?.aiType === 'summary'
+              ? 'bg-purple-50 border-purple-200'
+              : selectedHighlight
+              ? 'bg-yellow-50 border-yellow-200'
               : 'bg-blue-50 border-blue-100'
           }`}>
             <p className={`text-sm font-medium mb-1 ${
-              selectedHighlight ? 'text-yellow-900' : 'text-blue-900'
+              selectedHighlight?.aiType === 'explanation'
+                ? 'text-blue-900'
+                : selectedHighlight?.aiType === 'summary'
+                ? 'text-purple-900'
+                : selectedHighlight
+                ? 'text-yellow-900'
+                : 'text-blue-900'
             }`}>
               {selectedHighlight ? 'Selected Highlight:' : 'Selected Text:'}
             </p>
             <p className={`text-sm italic ${
-              selectedHighlight ? 'text-yellow-800' : 'text-blue-800'
+              selectedHighlight?.aiType === 'explanation'
+                ? 'text-blue-800'
+                : selectedHighlight?.aiType === 'summary'
+                ? 'text-purple-800'
+                : selectedHighlight
+                ? 'text-yellow-800'
+                : 'text-blue-800'
             }`}>
               "{selectedHighlight ? selectedHighlight.text : selectedText}"
             </p>
@@ -70,21 +86,29 @@ export default function ExplanationPanel({
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           </div>
-        ) : explanation ? (
+        ) : (selectedHighlight?.aiContent && selectedHighlight.aiType === 'explanation') || explanation ? (
           <div className="prose prose-sm max-w-none">
             <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <Lightbulb className="w-5 h-5 text-blue-600" />
               Explanation
             </h3>
-            <p className="text-gray-700 whitespace-pre-wrap">{explanation}</p>
+            <p className="text-gray-700 whitespace-pre-wrap">
+              {selectedHighlight?.aiContent && selectedHighlight.aiType === 'explanation' 
+                ? selectedHighlight.aiContent 
+                : explanation}
+            </p>
           </div>
-        ) : summary ? (
+        ) : (selectedHighlight?.aiContent && selectedHighlight.aiType === 'summary') || summary ? (
           <div className="prose prose-sm max-w-none">
             <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <FileText className="w-5 h-5 text-purple-600" />
               Summary
             </h3>
-            <p className="text-gray-700 whitespace-pre-wrap">{summary}</p>
+            <p className="text-gray-700 whitespace-pre-wrap">
+              {selectedHighlight?.aiContent && selectedHighlight.aiType === 'summary' 
+                ? selectedHighlight.aiContent 
+                : summary}
+            </p>
           </div>
         ) : referenceCheck ? (
           <div className="prose prose-sm max-w-none">

@@ -42,7 +42,7 @@ export default function ReaderScreen() {
     clearSelectedHighlight
   } = useHighlights(currentPageInView, pdfContainerRef);
 
-  // AI Actions hook
+  // AI Actions hook - pass callback to create AI highlights
   const {
     explanation,
     summary,
@@ -53,7 +53,9 @@ export default function ReaderScreen() {
     handleAISummary,
     handleReferenceCheck,
     clearAIActions
-  } = useAIActions();
+  } = useAIActions((selectedText, selectedRange, currentPageInView, aiType, aiContent) => {
+    addHighlight(selectedText, selectedRange, currentPageInView, aiType, aiContent);
+  });
 
   // Local state for text selection
   const [selectedText, setSelectedText] = useState('');
@@ -114,19 +116,24 @@ export default function ReaderScreen() {
     const highlight = highlights[pageNum]?.find(h => h.id === highlightId);
     if (highlight) {
       setSelectedText(highlight.text);
-      clearAIActions();
       setMenuPosition(null);
+      
+      // If it's not an AI highlight, clear AI actions
+      // The ExplanationPanel will show AI content from the highlight if it exists
+      if (!highlight.aiType || !highlight.aiContent) {
+        clearAIActions();
+      }
     }
   };
 
   // Handle AI actions with selected text
   const handleAIExplainClick = () => {
-    handleAIExplain(selectedText);
+    handleAIExplain(selectedText, selectedRange, currentPageInView);
     setMenuPosition(null);
   };
 
   const handleAISummaryClick = () => {
-    handleAISummary(selectedText);
+    handleAISummary(selectedText, selectedRange, currentPageInView);
     setMenuPosition(null);
   };
 

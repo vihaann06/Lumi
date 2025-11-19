@@ -104,6 +104,20 @@ export default function HighlightOverlay({
         
         const highlightId = highlight.id || idx;
         const isSelected = selectedHighlightId?.pageNum === pageNum && selectedHighlightId?.highlightId === highlightId;
+        const isAIHighlight = highlight.aiType === 'explanation' || highlight.aiType === 'summary';
+        
+        // Determine highlight color based on type
+        let bgColor, bgColorSelected;
+        if (highlight.aiType === 'explanation') {
+          bgColor = 'bg-blue-100';
+          bgColorSelected = 'bg-blue-200';
+        } else if (highlight.aiType === 'summary') {
+          bgColor = 'bg-purple-100';
+          bgColorSelected = 'bg-purple-200';
+        } else {
+          bgColor = 'bg-yellow-100';
+          bgColorSelected = 'bg-yellow-200';
+        }
         
         return (
           <React.Fragment key={highlightId}>
@@ -112,8 +126,8 @@ export default function HighlightOverlay({
                 key={rectIdx}
                 className={`absolute rounded-sm transition-all pointer-events-auto cursor-pointer ${
                   isSelected 
-                    ? 'bg-yellow-200 opacity-60' 
-                    : 'bg-yellow-100 opacity-40 hover:opacity-50'
+                    ? `${bgColorSelected} opacity-60` 
+                    : `${bgColor} opacity-40 hover:opacity-50`
                 }`}
                 style={{
                   left: `${rect.x}px`,
@@ -125,21 +139,6 @@ export default function HighlightOverlay({
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('🖱️ Highlight Overlay Clicked:', {
-                    pageNum,
-                    highlightId,
-                    rectIndex: rectIdx,
-                    rect: {
-                      x: Math.round(rect.x),
-                      y: Math.round(rect.y),
-                      width: Math.round(rect.width),
-                      height: Math.round(rect.height)
-                    },
-                    clickPosition: {
-                      clientX: e.clientX,
-                      clientY: e.clientY
-                    }
-                  });
                   onHighlightClick(pageNum, highlightId);
                 }}
               />
