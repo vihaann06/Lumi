@@ -14,3 +14,32 @@ html, body {
   overflow: hidden;
 }
 
+/* Ensure highlight overlay is above PDF content */
+.highlight-overlay {
+  z-index: 100 !important;
+}
+
+.highlight-overlay > div {
+  z-index: 101 !important;
+}
+
+/* Disable pointer-events on PDF canvas when highlights are present */
+[data-page-number]:has(.highlight-overlay) canvas {
+  pointer-events: none !important;
+}
+
+/* Disable pointer-events on PDF text layer container when highlights are present */
+[data-page-number]:has(.highlight-overlay) .react-pdf__Page__textContent {
+  pointer-events: none !important;
+}
+
+/* But keep pointer-events on text spans for selection */
+[data-page-number]:has(.highlight-overlay) .react-pdf__Page__textContent span {
+  pointer-events: auto !important;
+}
+
+/* Disable pointer-events on annotation layer when highlights are present */
+[data-page-number]:has(.highlight-overlay) .react-pdf__Page__annotations {
+  pointer-events: none !important;
+}
+

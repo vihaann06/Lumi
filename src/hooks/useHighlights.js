@@ -1,0 +1,68 @@
+import { useState } from 'react';
+import { calculateHighlightRects, findPageForSelection, createHighlight, mergeOverlappingRects } from '../utils/highlightUtils';
+
+/**
+ * Custom hook for highlight management
+ */
+export const useHighlights = (currentPageInView, pdfContainerRef) => {
+  const [highlights, setHighlights] = useState({});
+  const [selectedHighlightId, setSelectedHighlightId] = useState(null);
+
+  const addHighlight = (selectedText, selectedRange, currentPageInView) => {
+    if (!selectedText || !selectedRange) return;
+
+    const clientRects = selectedRange.getClientRects();
+    if (clientRects.length === 0) return;
+
+    const pages = pdfContainerRef.current?.querySelectorAll('[data-page-number]');
+    const { pageElement, pageNum } = findPageForSelection(clientRects, pages, currentPageInView);
+
+    let pageRect;
+    if (pageElement) {
+      pageRect = pageElement.getBoundingClientRect();
+    } else {
+      const element = pdfContainerRef.current?.querySelector(`[data-page-number="${pageNum}"]`);
+      if (!element) return;
+      pageRect = element.getBoundingClientRect();
+    }
+
+    let highlightRects = calculateHighlightRects(clientRects, pageRect);
+    // Merge overlapping rectangles within the highlight
+    highlightRects = mergeOverlappingRects(highlightRects);
+    const newHighlight = createHighlight(selectedText, highlightRects);
+    const currentPageHighlights = highlights[pageNum] || [];
+
+    setHighlights({
+      ...highlights,
+      [pageNum]: [...currentPageHighlights, newHighlight]
+    });
+
+    return newHighlight;
+  };
+
+  const selectHighlight = (pageNum, highlightId) => {
+    setSelectedHighlightId({ pageNum, highlightId });
+  };
+
+  const getSelectedHighlight = () => {
+    if (!selectedHighlightId) return null;
+    
+    const { pageNum, highlightId } = selectedHighlightId;
+    const pageHighlights = highlights[pageNum] || [];
+    return pageHighlights.find(h => h.id === highlightId) || null;
+  };
+
+  const clearSelectedHighlight = () => {
+    setSelectedHighlightId(null);
+  };
+
+  return {
+    highlights,
+    selectedHighlightId,
+    addHighlight,
+    selectHighlight,
+    getSelectedHighlight,
+    clearSelectedHighlight
+  };
+};
+
