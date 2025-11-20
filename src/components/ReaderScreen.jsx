@@ -9,6 +9,9 @@ import { usePDFViewer } from '../hooks/usePDFViewer';
 import { useHighlights } from '../hooks/useHighlights';
 import { useAIActions } from '../hooks/useAIActions';
 
+// Services
+import { chatWithAI } from '../services/openaiService';
+
 // Components
 import PDFViewer from './reader/PDFViewer';
 import SelectionMenu from './reader/SelectionMenu';
@@ -39,7 +42,8 @@ export default function ReaderScreen() {
     addHighlight,
     selectHighlight,
     getSelectedHighlight,
-    clearSelectedHighlight
+    clearSelectedHighlight,
+    updateHighlightChatHistory
   } = useHighlights(currentPageInView, pdfContainerRef);
 
   // AI Actions hook - pass callback to create AI highlights
@@ -54,7 +58,7 @@ export default function ReaderScreen() {
     handleReferenceCheck,
     clearAIActions
   } = useAIActions((selectedText, selectedRange, currentPageInView, aiType, aiContent) => {
-    addHighlight(selectedText, selectedRange, currentPageInView, aiType, aiContent);
+    return addHighlight(selectedText, selectedRange, currentPageInView, aiType, aiContent);
   });
 
   // Local state for text selection
@@ -62,6 +66,7 @@ export default function ReaderScreen() {
   const [selectedRange, setSelectedRange] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
   // Handle text selection
   const handleTextSelection = (e) => {
@@ -127,14 +132,78 @@ export default function ReaderScreen() {
   };
 
   // Handle AI actions with selected text
-  const handleAIExplainClick = () => {
-    handleAIExplain(selectedText, selectedRange, currentPageInView);
+  const handleAIExplainClick = async () => {
+    const highlightResult = await handleAIExplain(selectedText, selectedRange, currentPageInView);
     setMenuPosition(null);
+    
+    // Automatically select the highlight to show chat interface
+    if (highlightResult && highlightResult.highlight) {
+      selectHighlight(highlightResult.pageNum, highlightResult.highlight.id);
+      setSelectedText(highlightResult.highlight.text);
+    }
   };
 
-  const handleAISummaryClick = () => {
-    handleAISummary(selectedText, selectedRange, currentPageInView);
+  const handleAISummaryClick = async () => {
+    await handleAISummary(selectedText, selectedRange, currentPageInView);
     setMenuPosition(null);
+    // Summaries don't have chat functionality, so we don't auto-select them
+  };
+
+  // Handle chat message (only for explanations, not summaries)
+  const handleSendChatMessage = async (message) => {
+    if (!selectedHighlight || !selectedHighlightId || selectedHighlight.aiType !== 'explanation') return;
+
+    const { pageNum, highlightId } = selectedHighlightId;
+    const currentChatHistory = selectedHighlight.chatHistory || [];
+    
+    // Add user message to chat history
+    const updatedChatHistory = [
+      ...currentChatHistory,
+      {
+        role: 'user',
+        content: message,
+        timestamp: Date.now()
+      }
+    ];
+
+    // Update highlight with user message
+    updateHighlightChatHistory(pageNum, highlightId, updatedChatHistory);
+
+    // Get AI response
+    setIsChatLoading(true);
+    try {
+      const aiResponse = await chatWithAI(
+        selectedHighlight.text,
+        updatedChatHistory,
+        message
+      );
+
+      // Add AI response to chat history
+      const finalChatHistory = [
+        ...updatedChatHistory,
+        {
+          role: 'assistant',
+          content: aiResponse,
+          timestamp: Date.now()
+        }
+      ];
+
+      updateHighlightChatHistory(pageNum, highlightId, finalChatHistory);
+    } catch (error) {
+      console.error('Error sending chat message:', error);
+      // Add error message to chat history
+      const errorChatHistory = [
+        ...updatedChatHistory,
+        {
+          role: 'assistant',
+          content: 'Sorry, there was an error processing your message. Please try again.',
+          timestamp: Date.now()
+        }
+      ];
+      updateHighlightChatHistory(pageNum, highlightId, errorChatHistory);
+    } finally {
+      setIsChatLoading(false);
+    }
   };
 
   // Close menu when clicking outside
@@ -212,6 +281,8 @@ export default function ReaderScreen() {
           explanation={explanation}
           summary={summary}
           referenceCheck={referenceCheck}
+          onSendChatMessage={handleSendChatMessage}
+          isChatLoading={isChatLoading}
         />
       </div>
     </div>

@@ -64,3 +64,62 @@ export const getReferenceCheck = async (selectedText) => {
   return makeOpenAIRequest(prompt);
 };
 
+/**
+ * Chat with AI about selected text with conversation history
+ * @param {string} selectedText - The highlighted text context
+ * @param {Array} chatHistory - Array of { role: 'user' | 'assistant', content: string }
+ * @param {string} userMessage - The current user message
+ * @returns {Promise<string>} - The AI's response
+ */
+export const chatWithAI = async (selectedText, chatHistory, userMessage) => {
+  // Build the conversation messages
+  const messages = [
+    {
+      role: 'system',
+      content: `You are a helpful AI assistant helping the user understand the following text. Use this text as context for all your responses:\n\n"${selectedText}"\n\nAnswer questions about this text clearly and helpfully.`
+    }
+  ];
+
+  // Add conversation history (excluding the system message)
+  chatHistory.forEach(msg => {
+    messages.push({
+      role: msg.role,
+      content: msg.content
+    });
+  });
+
+  // Add the current user message
+  messages.push({
+    role: 'user',
+    content: userMessage
+  });
+
+  // Make the API request with the messages array
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: messages,
+      max_tokens: 1000,
+      temperature: 0.7,
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || 'API request failed');
+  }
+
+  const data = await response.json();
+  
+  if (data.choices && data.choices[0] && data.choices[0].message) {
+    return data.choices[0].message.content;
+  } else {
+    throw new Error('Unexpected response format');
+  }
+};
+

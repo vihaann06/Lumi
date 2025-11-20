@@ -202,13 +202,43 @@ export const findPageForSelection = (clientRects, pages, currentPageInView) => {
 export const createHighlight = (text, highlightRects, aiType = null, aiContent = null) => {
   const highlightId = Date.now();
   
+  // Initialize chat history with the initial AI response only for explanations (not summaries)
+  const chatHistory = (aiType === 'explanation' && aiContent) ? [
+    {
+      role: 'assistant',
+      content: aiContent,
+      timestamp: highlightId
+    }
+  ] : [];
+  
   return {
     id: highlightId,
     text,
     timestamp: highlightId,
     rects: highlightRects,
     aiType, // 'explanation' or 'summary'
-    aiContent // The AI-generated content
+    aiContent, // The AI-generated content (kept for backward compatibility)
+    chatHistory // Array of { role: 'user' | 'assistant', content: string, timestamp: number }
   };
+};
+
+/**
+ * Truncate text to show first 20 words and last 3 words if longer than 23 words
+ * @param {string} text - The text to truncate
+ * @returns {string} - Truncated text with ellipsis if needed
+ */
+export const truncateTextForDisplay = (text) => {
+  if (!text) return '';
+  
+  const words = text.trim().split(/\s+/);
+  
+  if (words.length <= 23) {
+    return text;
+  }
+  
+  const firstWords = words.slice(0, 20).join(' ');
+  const lastWords = words.slice(-3).join(' ');
+  
+  return `${firstWords} ... ${lastWords}`;
 };
 

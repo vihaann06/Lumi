@@ -12,7 +12,7 @@ export const useAIActions = (onCreateAIHighlight = null) => {
   const [activeAction, setActiveAction] = useState(null);
 
   const handleAIExplain = async (selectedText, selectedRange = null, currentPageInView = null) => {
-    if (!selectedText) return;
+    if (!selectedText) return null;
     
     setIsLoading(true);
     setActiveAction('explain');
@@ -25,11 +25,14 @@ export const useAIActions = (onCreateAIHighlight = null) => {
       
       // Create AI highlight if callback is provided
       if (onCreateAIHighlight && selectedRange && currentPageInView) {
-        onCreateAIHighlight(selectedText, selectedRange, currentPageInView, 'explanation', result);
+        const highlightResult = onCreateAIHighlight(selectedText, selectedRange, currentPageInView, 'explanation', result);
+        return highlightResult;
       }
+      return null;
     } catch (error) {
       setExplanation('Sorry, there was an error getting the explanation. Please try again.');
       console.error('Error:', error);
+      return null;
     } finally {
       setIsLoading(false);
       window.getSelection().removeAllRanges();
@@ -37,7 +40,7 @@ export const useAIActions = (onCreateAIHighlight = null) => {
   };
 
   const handleAISummary = async (selectedText, selectedRange = null, currentPageInView = null) => {
-    if (!selectedText) return;
+    if (!selectedText) return null;
     
     setIsLoading(true);
     setActiveAction('summary');
@@ -50,11 +53,14 @@ export const useAIActions = (onCreateAIHighlight = null) => {
       
       // Create AI highlight if callback is provided
       if (onCreateAIHighlight && selectedRange && currentPageInView) {
-        onCreateAIHighlight(selectedText, selectedRange, currentPageInView, 'summary', result);
+        const highlightResult = onCreateAIHighlight(selectedText, selectedRange, currentPageInView, 'summary', result);
+        return highlightResult;
       }
+      return null;
     } catch (error) {
       setSummary('Sorry, there was an error getting the summary. Please try again.');
       console.error('Error:', error);
+      return null;
     } finally {
       setIsLoading(false);
       window.getSelection().removeAllRanges();

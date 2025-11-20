@@ -37,7 +37,7 @@ export const useHighlights = (currentPageInView, pdfContainerRef) => {
       [pageNum]: [...currentPageHighlights, newHighlight]
     });
 
-    return newHighlight;
+    return { highlight: newHighlight, pageNum };
   };
 
   const selectHighlight = (pageNum, highlightId) => {
@@ -56,13 +56,29 @@ export const useHighlights = (currentPageInView, pdfContainerRef) => {
     setSelectedHighlightId(null);
   };
 
+  const updateHighlightChatHistory = (pageNum, highlightId, chatHistory) => {
+    setHighlights(prev => {
+      const pageHighlights = prev[pageNum] || [];
+      const updatedHighlights = pageHighlights.map(h => 
+        h.id === highlightId 
+          ? { ...h, chatHistory, aiContent: chatHistory.length > 0 ? chatHistory[0].content : h.aiContent }
+          : h
+      );
+      return {
+        ...prev,
+        [pageNum]: updatedHighlights
+      };
+    });
+  };
+
   return {
     highlights,
     selectedHighlightId,
     addHighlight,
     selectHighlight,
     getSelectedHighlight,
-    clearSelectedHighlight
+    clearSelectedHighlight,
+    updateHighlightChatHistory
   };
 };
 
