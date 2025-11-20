@@ -227,15 +227,15 @@ export default function ReaderScreen() {
   }
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <h1 className="text-2xl font-semibold text-gray-900">Lumi</h1>
+      <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-8 py-4 flex items-center justify-between flex-shrink-0">
+        <h1 className="text-xl font-light text-slate-900 tracking-tight">Lumi</h1>
         
         {numPages && (
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-700">
-              Page {currentPageInView} of {numPages}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500 font-light">
+              {currentPageInView} <span className="text-slate-300">/</span> {numPages}
             </span>
           </div>
         )}
@@ -244,7 +244,7 @@ export default function ReaderScreen() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* PDF Viewer - Scrollable */}
-        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative" onMouseUp={handleTextSelection}>
+        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-100/50" onMouseUp={handleTextSelection}>
           <PDFViewer
             pdfFile={pdfFile}
             numPages={numPages}
