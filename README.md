@@ -1,4 +1,4 @@
-# PDF Reader with AI
+# Lumi
 
 A modern React-based PDF viewer with text highlighting and AI-powered explanations.
 

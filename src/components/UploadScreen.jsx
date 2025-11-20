@@ -27,7 +27,7 @@ export default function UploadScreen() {
     <div className="h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-2xl p-12 max-w-2xl w-full mx-4">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">PDF Reader with AI</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Lumi</h1>
           <p className="text-gray-600">Upload a PDF to get started</p>
         </div>
         
