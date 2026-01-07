@@ -33,6 +33,18 @@ npm start
 
 The app will be available at `http://localhost:3000`
 
+## Supabase setup (auth + data)
+
+- Create a Supabase project and grab `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Add them to a `.env.local` file in the project root:
+  ```
+  NEXT_PUBLIC_SUPABASE_URL=...
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+  ```
+- Apply `lib/db/migrations/0001_supabase_schema.sql` in the Supabase SQL editor to seed the core tables and RLS policies
+- In Supabase Auth settings, temporarily disable email confirmations so sign-ups return a session immediately
+- Start the app and use `/auth` to sign up or sign in (accounts are created directly in Supabase Auth)
+
 ## Current Features
 
 - PDF upload and viewing

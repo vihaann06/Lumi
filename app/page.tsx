@@ -1,8 +1,8 @@
 'use client'
 
-import UploadScreen from './components/UploadScreen'
+import HomeScreen from './components/HomeScreen'
 
 export default function Home() {
-  return <UploadScreen />
+  return <HomeScreen />
 }
 

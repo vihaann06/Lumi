@@ -1,11 +1,16 @@
 'use client'
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Upload, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 export default function UploadScreen() {
   const router = useRouter();
+  const supabase = getSupabaseClient();
+  const [authUser, setAuthUser] = useState(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -25,8 +30,73 @@ export default function UploadScreen() {
     }
   };
 
+  const handleSignOut = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setAuthUser(null);
+    setIsMenuOpen(false);
+  };
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthUser(data.session?.user ?? null);
+    });
+
+    const {
+      data: authListener,
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const profileInitial =
+    authUser?.user_metadata?.first_name?.[0]?.toUpperCase() ||
+    authUser?.email?.[0]?.toUpperCase() ||
+    'U';
+
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center p-4">
+    <div className="relative h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center p-4">
+      <div className="absolute top-6 right-6">
+        {authUser ? (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-slate-200 bg-white/80 text-slate-700 font-semibold shadow-sm hover:border-indigo-200 hover:text-indigo-600 transition-colors"
+            >
+              {profileInitial}
+            </button>
+            {isMenuOpen && (
+              <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 bg-white/90 backdrop-blur shadow-lg shadow-slate-200/60">
+                <div className="px-4 py-2 text-xs text-slate-500 border-b border-slate-100 truncate">
+                  {authUser.email}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 rounded-b-xl"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link
+            href="/auth"
+            className="inline-flex items-center rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-indigo-200 hover:text-indigo-600 transition-colors"
+          >
+            Sign in
+          </Link>
+        )}
+      </div>
+
       <div className="w-full max-w-lg">
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-6 shadow-lg shadow-indigo-500/20">
