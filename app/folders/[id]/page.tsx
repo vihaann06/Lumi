@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Upload, FileEdit, ArrowLeft, Plus } from 'lucide-react'
+import { Upload, FileEdit, ArrowLeft, Plus, FolderOpen } from 'lucide-react'
+import { getSupabaseClient } from '@/lib/supabaseClient'
 
 export default function FolderPage() {
   const params = useParams<{ id: string }>()
@@ -16,6 +17,9 @@ export default function FolderPage() {
     null
   )
   const [fileName, setFileName] = useState('')
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false)
+  const [folderName, setFolderName] = useState('Folder')
+  const supabase = getSupabaseClient()
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -32,9 +36,9 @@ export default function FolderPage() {
 
         const fileUrl = URL.createObjectURL(file)
         router.push(
-          `/reader?folderId=${encodeURIComponent(
+          `/folders/${encodeURIComponent(
             folderId
-          )}&fileUrl=${encodeURIComponent(fileUrl)}&fileName=${encodeURIComponent(
+          )}/reader?fileUrl=${encodeURIComponent(fileUrl)}&fileName=${encodeURIComponent(
             effectiveName
           )}`
         )
@@ -47,8 +51,22 @@ export default function FolderPage() {
     setWriteStatus('idle')
   }, [writeContent])
 
+  useEffect(() => {
+    if (!supabase || !folderId) return
+    supabase
+      .from('folders')
+      .select('name')
+      .eq('id', folderId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data?.name) {
+          setFolderName(data.name)
+        }
+      })
+  }, [supabase, folderId])
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-slate-50 p-6 relative">
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => router.push('/')}
@@ -57,102 +75,17 @@ export default function FolderPage() {
           <ArrowLeft className="h-4 w-4" />
           Back
         </button>
-        <h1 className="text-2xl font-semibold text-slate-900">Folder</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">{folderName}</h1>
       </div>
 
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-slate-500">
-        <div className="flex flex-col items-center gap-4">
-          <Plus className="h-8 w-8 text-slate-400" />
-              <p className="text-sm text-slate-600">No files yet. Add your first file.</p>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsAddOpen((prev) => !prev)}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white text-sm font-medium px-4 py-2 shadow-sm hover:bg-indigo-700 transition"
-            >
-              <Plus className="h-4 w-4" />
-              Add file
-            </button>
-            {isAddOpen && (
-              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60 text-left overflow-hidden">
-                <button
-                  type="button"
-                  className="w-full px-4 py-3 text-sm text-slate-800 hover:bg-indigo-50 flex items-center gap-2"
-                  onClick={() => {
-                    setSelectedAction('write')
-                    setIsAddOpen(false)
-                    setWriteStatus('idle')
-                    setFileName('')
-                  }}
-                >
-                  <FileEdit className="h-4 w-4 text-indigo-500" />
-                  Start writing
-                </button>
-                <label className="w-full px-4 py-3 text-sm text-slate-800 hover:bg-indigo-50 flex items-center gap-2 cursor-pointer">
-                  <Upload className="h-4 w-4 text-indigo-500" />
-                  Upload to read
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    className="hidden"
-                    onChange={(event) => {
-                      setSelectedAction('read')
-                      setIsAddOpen(false)
-                      handleFileUpload(event)
-                    }}
-                    onClick={(e) => {
-                      // allow re-uploading same file
-                      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                      // @ts-ignore
-                      e.target.value = null
-                    }}
-                  />
-                </label>
-              </div>
-            )}
+      <div className="flex-1 flex items-center justify-center py-12 min-h-[70vh]">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center">
+            <FolderOpen className="h-10 w-10 text-slate-400" />
           </div>
+          <p className="text-base text-slate-600">No files yet. Add your first file.</p>
         </div>
       </div>
-
-      {selectedAction === 'write' && (
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <FileEdit className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Write</p>
-              <p className="text-xs text-slate-500">
-                Name your document and start writing (AI assistance coming soon)
-              </p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={fileName}
-              onChange={(e) => setFileName(e.target.value)}
-              placeholder="Document name"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (!fileName.trim()) return
-                router.push(
-                  `/folders/${encodeURIComponent(folderId)}/write?name=${encodeURIComponent(
-                    fileName.trim()
-                  )}`
-                )
-              }}
-              disabled={!fileName.trim()}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white text-sm font-medium px-4 py-2 shadow-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              Start writing
-            </button>
-          </div>
-        </div>
-      )}
 
       {selectedAction === 'read' && (
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -193,6 +126,113 @@ export default function FolderPage() {
           </div>
         </div>
       )}
+
+      {isNameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <FileEdit className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Name your document</p>
+                <p className="text-xs text-slate-500">We’ll open the editor next</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={fileName}
+                onChange={(e) => setFileName(e.target.value)}
+                placeholder="Document name"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNameModalOpen(false)
+                    setSelectedAction(null)
+                    setFileName('')
+                  }}
+                  className="text-sm text-slate-600 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!fileName.trim()}
+                  onClick={() => {
+                    if (!fileName.trim()) return
+                    setIsNameModalOpen(false)
+                    router.push(
+                      `/folders/${encodeURIComponent(folderId)}/write?name=${encodeURIComponent(
+                        fileName.trim()
+                      )}`
+                    )
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white text-sm font-medium px-4 py-2 shadow-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Start writing
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating add button */}
+      <div className="fixed bottom-6 right-6">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsAddOpen((prev) => !prev)}
+            className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-300 hover:bg-indigo-700 transition"
+            aria-label="Add file"
+          >
+            <Plus className="h-6 w-6" />
+          </button>
+          {isAddOpen && (
+            <div className="absolute bottom-16 right-0 w-64 rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60 text-left overflow-hidden">
+              <button
+                type="button"
+                className="w-full px-4 py-3 text-sm text-slate-800 hover:bg-indigo-50 flex items-center gap-2"
+                onClick={() => {
+                  setSelectedAction('write')
+                  setIsAddOpen(false)
+                  setWriteStatus('idle')
+                  setFileName('')
+                  setIsNameModalOpen(true)
+                }}
+              >
+                <FileEdit className="h-4 w-4 text-indigo-500" />
+                Start writing
+              </button>
+              <label className="w-full px-4 py-3 text-sm text-slate-800 hover:bg-indigo-50 flex items-center gap-2 cursor-pointer">
+                <Upload className="h-4 w-4 text-indigo-500" />
+                Upload to read
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(event) => {
+                    setSelectedAction('read')
+                    setIsAddOpen(false)
+                    handleFileUpload(event)
+                  }}
+                  onClick={(e) => {
+                    // allow re-uploading same file
+                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                    // @ts-ignore
+                    e.target.value = null
+                  }}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
