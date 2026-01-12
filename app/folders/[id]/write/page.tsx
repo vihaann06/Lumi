@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Writer from '@/app/components/Writer'
+import { getSupabaseClient } from '@/lib/supabaseClient'
 
 export default function FolderWritePage() {
   const params = useParams<{ id: string }>()
@@ -11,10 +12,55 @@ export default function FolderWritePage() {
   const router = useRouter()
 
   const folderId = params?.id
+  const docId = searchParams.get('docId') || ''
   const initialName = useMemo(() => searchParams.get('name') || '', [searchParams])
 
   const [fileName, setFileName] = useState(initialName)
   const [content, setContent] = useState('')
+  const supabase = getSupabaseClient()
+
+  // Load existing content
+  useEffect(() => {
+    const load = async () => {
+      if (!supabase || !docId) return
+      const { data } = await supabase
+        .from('document_assets')
+        .select('content_json')
+        .eq('doc_id', docId)
+        .eq('kind', 'metadata_json')
+        .maybeSingle()
+      if (data?.content_json?.content) {
+        setContent(data.content_json.content as string)
+      }
+
+      const doc = await supabase
+        .from('documents')
+        .select('title')
+        .eq('id', docId)
+        .maybeSingle()
+      if (doc.data?.title) {
+        setFileName(doc.data.title)
+      }
+    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId])
+
+  // Save content (debounced)
+  useEffect(() => {
+    if (!supabase || !docId) return
+    const timer = setTimeout(async () => {
+      await supabase.from('document_assets').upsert({
+        doc_id: docId,
+        workspace_id: null,
+        kind: 'metadata_json',
+        bucket: 'documents',
+        path: `docs/${docId}.json`,
+        content_json: { content },
+      })
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [content, docId, supabase])
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
