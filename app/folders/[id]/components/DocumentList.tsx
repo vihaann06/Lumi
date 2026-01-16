@@ -12,8 +12,9 @@ type Props = {
   isLoading: boolean
   onDelete?: (docId: string) => void
   deletingId?: string | null
-  onRename?: (docId: string) => void
+  onRename?: (docId: string, name?: string) => void
   renamingId?: string | null
+  onSelectForRename?: (docId: string, currentName: string) => void
 }
 
 export default function DocumentList({
@@ -24,6 +25,7 @@ export default function DocumentList({
   deletingId,
   onRename,
   renamingId,
+  onSelectForRename,
 }: Props) {
   const router = useRouter()
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
@@ -134,7 +136,11 @@ export default function DocumentList({
                         onClick={(e) => {
                           e.stopPropagation()
                           setOpenMenuId(null)
-                          onRename(doc.id)
+                          if (onSelectForRename) {
+                            onSelectForRename(doc.id, doc.title || 'Untitled')
+                          } else {
+                            onRename(doc.id)
+                          }
                         }}
                         disabled={Boolean(renamingId && renamingId === doc.id)}
                         className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"

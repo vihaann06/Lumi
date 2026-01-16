@@ -10,6 +10,7 @@ import AddFab from './components/AddFab'
 import NameModal from './components/NameModal'
 import ReadModal from './components/ReadModal'
 import { generateThumbnail } from './utils/thumbnails'
+import RenameModal from './components/RenameModal'
 
 export default function FolderPage() {
   const params = useParams<{ id: string }>()
@@ -24,6 +25,9 @@ export default function FolderPage() {
   const [renameError, setRenameError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameModalOpen, setRenameModalOpen] = useState(false)
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const {
     folderName,
@@ -111,11 +115,9 @@ export default function FolderPage() {
     }
   }
 
-  const handleRenameDocument = async (docId: string) => {
+  const handleRenameDocument = async (docId: string, name?: string) => {
     setRenameError(null)
-    const newName = window.prompt('Rename file to:', fileName || 'Untitled')
-    if (newName === null) return
-    const trimmed = newName.trim()
+    const trimmed = (name ?? '').trim()
     if (!trimmed) {
       setRenameError('Name cannot be empty.')
       return
@@ -123,6 +125,9 @@ export default function FolderPage() {
     setRenamingId(docId)
     try {
       await renameDocument(docId, trimmed)
+      setRenameModalOpen(false)
+      setRenameTargetId(null)
+      setRenameValue('')
     } catch (err: any) {
       const message = err?.message || 'Rename failed. Please try again.'
       setRenameError(message)
@@ -163,6 +168,11 @@ export default function FolderPage() {
             deletingId={deletingId}
             onRename={handleRenameDocument}
             renamingId={renamingId}
+            onSelectForRename={(docId, currentName) => {
+              setRenameTargetId(docId)
+              setRenameValue(currentName)
+              setRenameModalOpen(true)
+            }}
           />
         </div>
       )}
@@ -200,6 +210,19 @@ export default function FolderPage() {
         onSelectRead={() => {
           setFileName('')
           setIsReadModalOpen(true)
+        }}
+      />
+
+      <RenameModal
+        fileName={renameValue}
+        isOpen={renameModalOpen}
+        onClose={() => {
+          setRenameModalOpen(false)
+          setRenameTargetId(null)
+        }}
+        onConfirm={(name) => {
+          if (!renameTargetId) return
+          handleRenameDocument(renameTargetId, name)
         }}
       />
     </div>
