@@ -18,6 +18,9 @@ export default function FolderPage() {
   const [isNameModalOpen, setIsNameModalOpen] = useState(false)
   const [isReadModalOpen, setIsReadModalOpen] = useState(false)
   const [fileName, setFileName] = useState('')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const {
     folderName,
@@ -26,30 +29,37 @@ export default function FolderPage() {
     isMetaReady,
     insertPdfDocument,
     insertWriterDocument,
+    deleteDocument,
   } = useFolderData(folderId)
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null)
     const file = e.target.files?.[0]
     if (!file || !folderId) return
     try {
       if (file.type !== 'application/pdf') {
-        console.error('Only PDF is supported for read uploads right now.')
+        setUploadError('Only PDF is supported for read uploads right now.')
         return
       }
       const effectiveName = fileName.trim() || file.name
       const inserted = await insertPdfDocument(effectiveName, file)
       if (!inserted?.docId) {
-        console.error('Insert PDF document failed')
+        setUploadError('Upload failed. Please try again.')
         return
       }
 
       const reader = new FileReader()
       reader.onload = (event) => {
         const base64 = event.target?.result
-        if (!base64) return
-
-        sessionStorage.setItem('pdfFile', base64 as string)
-        sessionStorage.setItem('pdfFileName', effectiveName)
+        if (base64) {
+          try {
+            // Persist only if small enough; large PDFs can exceed sessionStorage quota.
+            sessionStorage.setItem('pdfFile', base64 as string)
+          } catch (storageErr) {
+            console.warn('Skipping sessionStorage cache for PDF (likely too large):', storageErr)
+          }
+          sessionStorage.setItem('pdfFileName', effectiveName)
+        }
 
         const fileUrl = URL.createObjectURL(file)
         router.push(
@@ -61,6 +71,10 @@ export default function FolderPage() {
         )
       }
       reader.readAsDataURL(file)
+    } catch (err: any) {
+      const message = err?.message || 'Upload failed. Please try again.'
+      setUploadError(message)
+      console.error('PDF upload error:', err)
     } finally {
       e.target.value = ''
     }
@@ -77,15 +91,45 @@ export default function FolderPage() {
     )
   }
 
+  const handleDeleteDocument = async (docId: string) => {
+    setDeleteError(null)
+    setDeletingId(docId)
+    try {
+      await deleteDocument(docId)
+    } catch (err: any) {
+      const message = err?.message || 'Delete failed. Please try again.'
+      setDeleteError(message)
+      console.error('Delete document error:', err)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6 relative">
+      {uploadError && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {uploadError}
+        </div>
+      )}
+      {deleteError && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {deleteError}
+        </div>
+      )}
       <FolderHeader title={folderName} />
 
       {documents.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="flex-1">
-          <DocumentList folderId={folderId} documents={documents} isLoading={isLoadingDocs} />
+          <DocumentList
+            folderId={folderId}
+            documents={documents}
+            isLoading={isLoadingDocs}
+            onDelete={handleDeleteDocument}
+            deletingId={deletingId}
+          />
         </div>
       )}
 

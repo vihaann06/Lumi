@@ -77,14 +77,22 @@ export function useFolderData(folderId: string | null) {
 
   const insertPdfDocument = useCallback(
     async (name: string, file: File) => {
-      if (!supabase || !folderId) return null
+      if (!supabase || !folderId) throw new Error('Missing Supabase client or folder id')
 
       const ensured = await ensureWorkspaceAndAccount()
-      if (!ensured) return null
+      if (!ensured) throw new Error('User not signed in')
       const { workspaceId, accountId, uid } = ensured
 
       const effectiveName = name || file.name
+      const bucket = 'documents'
       const filePath = `read/${crypto.randomUUID()}.pdf`
+
+      const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type,
+      })
+      if (uploadError) throw uploadError
 
       const docId = await createDocument(supabase, {
         title: effectiveName,
@@ -94,16 +102,48 @@ export function useFolderData(folderId: string | null) {
         ownerUserId: uid,
         docType: 'pdf',
         mimeType: file.type,
-        fileBucket: 'documents',
+        fileBucket: bucket,
         filePath,
         status: 'ready',
       })
 
-      if (!docId) return null
+      if (!docId) throw new Error('Failed to create document')
       await fetchDocuments()
       return { docId, filePath }
     },
     [ensureWorkspaceAndAccount, fetchDocuments, folderId, supabase]
+  )
+
+  const deleteDocument = useCallback(
+    async (docId: string) => {
+      if (!supabase || !folderId) throw new Error('Missing Supabase client or folder id')
+
+      // Fetch storage info for the document
+      const { data: docRow, error: docError } = await supabase
+        .from('documents')
+        .select('file_bucket, file_path')
+        .eq('id', docId)
+        .maybeSingle()
+      if (docError) throw docError
+
+      // Best-effort delete from storage
+      if (docRow?.file_bucket && docRow?.file_path) {
+        const { error: storageError } = await supabase.storage
+          .from(docRow.file_bucket)
+          .remove([docRow.file_path])
+        if (storageError) {
+          // If storage fails, stop to avoid orphaned DB records
+          throw storageError
+        }
+      }
+
+      const { error: deleteError } = await supabase.from('documents').delete().eq('id', docId)
+      if (deleteError) throw deleteError
+
+      await fetchDocuments()
+      return true
+    },
+    [fetchDocuments, folderId, supabase]
   )
 
   const insertWriterDocument = useCallback(
@@ -142,6 +182,7 @@ export function useFolderData(folderId: string | null) {
     isMetaReady,
     insertPdfDocument,
     insertWriterDocument,
+    deleteDocument,
     refreshDocuments: fetchDocuments,
   }
 }

@@ -7,9 +7,17 @@ type Props = {
   folderId: string
   documents: DocRow[]
   isLoading: boolean
+  onDelete?: (docId: string) => void
+  deletingId?: string | null
 }
 
-export default function DocumentList({ folderId, documents, isLoading }: Props) {
+export default function DocumentList({
+  folderId,
+  documents,
+  isLoading,
+  onDelete,
+  deletingId,
+}: Props) {
   const router = useRouter()
 
   if (isLoading) {
@@ -31,30 +39,45 @@ export default function DocumentList({ folderId, documents, isLoading }: Props) 
               <p className="text-sm font-semibold text-slate-900">{doc.title || 'Untitled'}</p>
               <p className="text-xs text-slate-500">{doc.doc_type || 'file'}</p>
             </div>
-            <button
-              onClick={() => {
-                if (doc.doc_type === 'pdf') {
-                  router.push(
-                    `/folders/${encodeURIComponent(
-                      folderId
-                    )}/reader?docId=${encodeURIComponent(doc.id)}&fileName=${encodeURIComponent(
-                      doc.title || 'Untitled'
-                    )}`
-                  )
-                } else {
-                  router.push(
-                    `/folders/${encodeURIComponent(
-                      folderId
-                    )}/write?docId=${encodeURIComponent(doc.id)}&name=${encodeURIComponent(
-                      doc.title || 'Untitled'
-                    )}`
-                  )
-                }
-              }}
-              className="text-sm text-indigo-600 hover:text-indigo-700"
-            >
-              Open
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  if (doc.doc_type === 'pdf') {
+                    router.push(
+                      `/folders/${encodeURIComponent(
+                        folderId
+                      )}/reader?docId=${encodeURIComponent(doc.id)}&fileName=${encodeURIComponent(
+                        doc.title || 'Untitled'
+                      )}`
+                    )
+                  } else {
+                    router.push(
+                      `/folders/${encodeURIComponent(
+                        folderId
+                      )}/write?docId=${encodeURIComponent(doc.id)}&name=${encodeURIComponent(
+                        doc.title || 'Untitled'
+                      )}`
+                    )
+                  }
+                }}
+                className="text-sm text-indigo-600 hover:text-indigo-700"
+              >
+                Open
+              </button>
+              {onDelete && (
+                <button
+                  onClick={() => {
+                    const confirmed = window.confirm('Delete this file?')
+                    if (!confirmed) return
+                    onDelete(doc.id)
+                  }}
+                  disabled={Boolean(deletingId && deletingId === doc.id)}
+                  className="text-sm text-rose-600 hover:text-rose-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {deletingId === doc.id ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>

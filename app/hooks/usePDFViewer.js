@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 import { getFileUrl } from '@/lib/utils/pdfUtils';
 
 /**
@@ -10,6 +11,8 @@ import { getFileUrl } from '@/lib/utils/pdfUtils';
 export const usePDFViewer = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = getSupabaseClient();
+  const docId = searchParams.get('docId');
   const [pdfFile, setPdfFile] = useState(() => {
     const fileUrl = searchParams.get('fileUrl');
     if (fileUrl) return fileUrl;
@@ -32,13 +35,62 @@ export const usePDFViewer = () => {
   const [currentPageInView, setCurrentPageInView] = useState(1);
   const containerRef = useRef(null);
   const pdfContainerRef = useRef(null);
+  const [isFetchingDoc, setIsFetchingDoc] = useState(false);
 
   // Navigate away if no PDF file
   useEffect(() => {
-    if (!pdfFile) {
+    if (!pdfFile && !docId) {
       router.push('/');
     }
-  }, [pdfFile, router]);
+  }, [pdfFile, docId, router]);
+
+  // If the PDF isn't in session/query but we have a docId, fetch it from Supabase Storage
+  useEffect(() => {
+    const loadFromStorage = async () => {
+      if (!supabase || !docId || pdfFile || isFetchingDoc) return;
+      setIsFetchingDoc(true);
+      try {
+        const { data: docRow, error: docError } = await supabase
+          .from('documents')
+          .select('file_bucket, file_path, title')
+          .eq('id', docId)
+          .maybeSingle();
+
+        if (docError || !docRow?.file_bucket || !docRow?.file_path) {
+          router.push('/');
+          return;
+        }
+
+        const { data: blob, error: downloadError } = await supabase.storage
+          .from(docRow.file_bucket)
+          .download(docRow.file_path);
+
+        if (downloadError || !blob) {
+          router.push('/');
+          return;
+        }
+
+        // Create an object URL for the viewer
+        const objectUrl = URL.createObjectURL(blob);
+        setPdfFile(objectUrl);
+
+        // Store in sessionStorage for reloads
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result;
+          if (base64) {
+            sessionStorage.setItem('pdfFile', base64);
+            if (docRow.title) sessionStorage.setItem('pdfFileName', docRow.title);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } finally {
+        setIsFetchingDoc(false);
+      }
+    };
+
+    loadFromStorage();
+  }, [supabase, docId, pdfFile, isFetchingDoc, router]);
 
   // Update page width on resize
   useEffect(() => {

@@ -180,7 +180,15 @@ export default function HomeScreen() {
                 </div>
               )}
             </div>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={() => router.push('/auth')}
+              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
+            >
+              Sign in
+            </button>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex items-center justify-between">
@@ -201,8 +209,15 @@ export default function HomeScreen() {
 
         <div className="flex-1 overflow-y-auto pr-2">
           {!isAuthed ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-              Sign in to view and manage your folders.
+            <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 space-y-3">
+              <p>Sign in to view and manage your folders.</p>
+              <button
+                type="button"
+                onClick={() => router.push('/auth')}
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
+              >
+                Go to sign in
+              </button>
             </div>
           ) : isLoadingFolders ? (
             <div className="flex items-center gap-2 text-slate-500 text-sm">
