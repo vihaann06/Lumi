@@ -19,7 +19,7 @@ export async function listFolderDocuments(
   if (!supabase || !folderId) return []
   const { data, error } = await supabase
     .from('documents')
-    .select('id, title, doc_type, updated_at')
+    .select('id, title, doc_type, updated_at, document_assets ( kind, bucket, path )')
     .eq('folder_id', folderId)
     .order('updated_at', { ascending: false })
   if (error || !data) return []

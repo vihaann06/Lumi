@@ -9,6 +9,7 @@ import DocumentList from './components/DocumentList'
 import AddFab from './components/AddFab'
 import NameModal from './components/NameModal'
 import ReadModal from './components/ReadModal'
+import { generateThumbnail } from './utils/thumbnails'
 
 export default function FolderPage() {
   const params = useParams<{ id: string }>()
@@ -20,7 +21,9 @@ export default function FolderPage() {
   const [fileName, setFileName] = useState('')
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [renameError, setRenameError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
 
   const {
     folderName,
@@ -30,6 +33,7 @@ export default function FolderPage() {
     insertPdfDocument,
     insertWriterDocument,
     deleteDocument,
+    renameDocument,
   } = useFolderData(folderId)
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -41,8 +45,10 @@ export default function FolderPage() {
         setUploadError('Only PDF is supported for read uploads right now.')
         return
       }
+
+      const thumbnail = await generateThumbnail(file)
       const effectiveName = fileName.trim() || file.name
-      const inserted = await insertPdfDocument(effectiveName, file)
+      const inserted = await insertPdfDocument(effectiveName, file, thumbnail)
       if (!inserted?.docId) {
         setUploadError('Upload failed. Please try again.')
         return
@@ -105,6 +111,27 @@ export default function FolderPage() {
     }
   }
 
+  const handleRenameDocument = async (docId: string) => {
+    setRenameError(null)
+    const newName = window.prompt('Rename file to:', fileName || 'Untitled')
+    if (newName === null) return
+    const trimmed = newName.trim()
+    if (!trimmed) {
+      setRenameError('Name cannot be empty.')
+      return
+    }
+    setRenamingId(docId)
+    try {
+      await renameDocument(docId, trimmed)
+    } catch (err: any) {
+      const message = err?.message || 'Rename failed. Please try again.'
+      setRenameError(message)
+      console.error('Rename document error:', err)
+    } finally {
+      setRenamingId(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6 relative">
       {uploadError && (
@@ -115,6 +142,11 @@ export default function FolderPage() {
       {deleteError && (
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {deleteError}
+        </div>
+      )}
+      {renameError && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {renameError}
         </div>
       )}
       <FolderHeader title={folderName} />
@@ -129,6 +161,8 @@ export default function FolderPage() {
             isLoading={isLoadingDocs}
             onDelete={handleDeleteDocument}
             deletingId={deletingId}
+            onRename={handleRenameDocument}
+            renamingId={renamingId}
           />
         </div>
       )}

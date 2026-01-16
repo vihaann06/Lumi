@@ -12,6 +12,8 @@ export type DocRow = {
   title: string | null
   doc_type: string | null
   updated_at: string | null
+  thumbnail_path?: string | null
+  thumbnail_bucket?: string | null
 }
 
 export function useFolderData(folderId: string | null) {
@@ -43,7 +45,18 @@ export function useFolderData(folderId: string | null) {
     if (!supabase || !folderId) return
     setIsLoadingDocs(true)
     const data = await listFolderDocuments(supabase, folderId)
-    setDocuments(data as DocRow[])
+    const withThumbs = (data as any[]).map((d) => {
+      const thumb = d.document_assets?.find?.((a: any) => a.kind === 'thumbnail_png')
+      return {
+        id: d.id,
+        title: d.title,
+        doc_type: d.doc_type,
+        updated_at: d.updated_at,
+        thumbnail_path: thumb?.path ?? null,
+        thumbnail_bucket: thumb?.bucket ?? (thumb ? 'documents' : null),
+      } as DocRow
+    })
+    setDocuments(withThumbs)
     setIsLoadingDocs(false)
   }, [folderId, supabase])
 
@@ -76,7 +89,7 @@ export function useFolderData(folderId: string | null) {
   }, [folderMeta, supabase])
 
   const insertPdfDocument = useCallback(
-    async (name: string, file: File) => {
+    async (name: string, file: File, thumbnail?: Blob | null) => {
       if (!supabase || !folderId) throw new Error('Missing Supabase client or folder id')
 
       const ensured = await ensureWorkspaceAndAccount()
@@ -108,6 +121,30 @@ export function useFolderData(folderId: string | null) {
       })
 
       if (!docId) throw new Error('Failed to create document')
+
+      // Upload thumbnail and store asset
+      if (thumbnail) {
+        const thumbPath = `thumbnails/${docId}.png`
+        const { error: thumbUploadError } = await supabase.storage
+          .from(bucket)
+          .upload(thumbPath, thumbnail, {
+            cacheControl: '3600',
+            upsert: true,
+            contentType: 'image/png',
+          })
+        if (thumbUploadError) throw thumbUploadError
+
+        const { error: assetError } = await supabase.from('document_assets').upsert({
+          doc_id: docId,
+          workspace_id: workspaceId,
+          account_id: accountId,
+          kind: 'thumbnail_png',
+          bucket,
+          path: thumbPath,
+        })
+        if (assetError) throw assetError
+      }
+
       await fetchDocuments()
       return { docId, filePath }
     },
@@ -126,15 +163,27 @@ export function useFolderData(folderId: string | null) {
         .maybeSingle()
       if (docError) throw docError
 
-      // Best-effort delete from storage
+      // Fetch and delete related assets (thumbnails, etc.)
+      const { data: assets } = await supabase
+        .from('document_assets')
+        .select('bucket, path')
+        .eq('doc_id', docId)
+
+      const pathsToDelete: { bucket: string; path: string }[] = []
+
       if (docRow?.file_bucket && docRow?.file_path) {
-        const { error: storageError } = await supabase.storage
-          .from(docRow.file_bucket)
-          .remove([docRow.file_path])
-        if (storageError) {
-          // If storage fails, stop to avoid orphaned DB records
-          throw storageError
+        pathsToDelete.push({ bucket: docRow.file_bucket, path: docRow.file_path })
+      }
+      assets?.forEach((a) => {
+        if (a.bucket && a.path) {
+          pathsToDelete.push({ bucket: a.bucket, path: a.path })
         }
+      })
+
+      // Delete all storage objects (fail-fast if any deletion fails)
+      for (const item of pathsToDelete) {
+        const { error: storageError } = await supabase.storage.from(item.bucket).remove([item.path])
+        if (storageError) throw storageError
       }
 
       const { error: deleteError } = await supabase.from('documents').delete().eq('id', docId)
@@ -175,6 +224,23 @@ export function useFolderData(folderId: string | null) {
     [ensureWorkspaceAndAccount, fetchDocuments, folderId, supabase]
   )
 
+  const renameDocument = useCallback(
+    async (docId: string, title: string) => {
+      if (!supabase) throw new Error('Missing Supabase client')
+      const trimmed = title.trim()
+      if (!trimmed) throw new Error('Title cannot be empty')
+
+      const { error } = await supabase
+        .from('documents')
+        .update({ title: trimmed })
+        .eq('id', docId)
+      if (error) throw error
+      await fetchDocuments()
+      return true
+    },
+    [fetchDocuments, supabase]
+  )
+
   return {
     folderName,
     documents,
@@ -183,6 +249,7 @@ export function useFolderData(folderId: string | null) {
     insertPdfDocument,
     insertWriterDocument,
     deleteDocument,
+    renameDocument,
     refreshDocuments: fetchDocuments,
   }
 }
