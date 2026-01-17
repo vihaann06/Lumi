@@ -1,6 +1,6 @@
 'use client'
 
-import ReaderScreen from '@/app/components/ReaderScreen'
+import ReaderScreen from '../../../../components/reader/ReaderScreen'
 
 export default function FolderReaderPage() {
   return <ReaderScreen />

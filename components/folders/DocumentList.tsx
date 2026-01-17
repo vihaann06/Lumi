@@ -92,7 +92,7 @@ export default function DocumentList({
                 router.push(
                   `/folders/${encodeURIComponent(
                     folderId
-                  )}/write?docId=${encodeURIComponent(doc.id)}&name=${encodeURIComponent(
+                  )}/writer?docId=${encodeURIComponent(doc.id)}&name=${encodeURIComponent(
                     doc.title || 'Untitled'
                   )}`
                 )

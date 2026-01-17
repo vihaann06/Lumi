@@ -3,15 +3,14 @@
 import { ChangeEvent, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useFolderData } from './useFolderData'
-import FolderHeader from './components/FolderHeader'
-import EmptyState from './components/EmptyState'
-import DocumentList from './components/DocumentList'
-import AddFab from './components/AddFab'
-import NameModal from './components/NameModal'
-import ReadModal from './components/ReadModal'
+import FolderHeader from '../../../components/folders/FolderHeader'
+import EmptyState from '../../../components/folders/EmptyState'
+import DocumentList from '../../../components/folders/DocumentList'
+import AddFab from '../../../components/folders/AddFab'
+import NameModal from '../../../components/folders/NameModal'
+import ReadModal from '../../../components/folders/ReadModal'
 import { generateThumbnail } from './utils/thumbnails'
-import RenameModal from './components/RenameModal'
-
+import RenameModal from '../../../components/folders/RenameModal'
 export default function FolderPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -95,7 +94,7 @@ export default function FolderPage() {
     if (!docId) return
     setIsNameModalOpen(false)
     router.push(
-      `/folders/${encodeURIComponent(folderId)}/write?docId=${encodeURIComponent(
+      `/folders/${encodeURIComponent(folderId)}/writer?docId=${encodeURIComponent(
         docId
       )}&name=${encodeURIComponent(fileName.trim())}`
     )
