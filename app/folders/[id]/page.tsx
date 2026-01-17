@@ -138,68 +138,71 @@ export default function FolderPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 relative">
-      {uploadError && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {uploadError}
-        </div>
-      )}
-      {deleteError && (
-        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {deleteError}
-        </div>
-      )}
-      {renameError && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {renameError}
-        </div>
-      )}
+    <div className="min-h-screen bg-slate-50 relative">
       <FolderHeader title={folderName} />
 
-      {documents.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <div className="flex-1">
-          <DocumentList
-            folderId={folderId}
-            documents={documents}
-            isLoading={isLoadingDocs}
-            onDelete={handleDeleteDocument}
-            deletingId={deletingId}
-            onRename={handleRenameDocument}
-            renamingId={renamingId}
-            onSelectForRename={(docId, currentName) => {
-              setRenameTargetId(docId)
-              setRenameValue(currentName)
-              setRenameModalOpen(true)
+      <div className="px-6 pb-6">
+        {uploadError && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {uploadError}
+          </div>
+        )}
+        {deleteError && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {deleteError}
+          </div>
+        )}
+        {renameError && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {renameError}
+          </div>
+        )}
+
+        {documents.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div className="flex-1">
+            <DocumentList
+              folderId={folderId}
+              documents={documents}
+              isLoading={isLoadingDocs}
+              onDelete={handleDeleteDocument}
+              deletingId={deletingId}
+              onRename={handleRenameDocument}
+              renamingId={renamingId}
+              onSelectForRename={(docId, currentName) => {
+                setRenameTargetId(docId)
+                setRenameValue(currentName)
+                setRenameModalOpen(true)
+              }}
+            />
+          </div>
+        )}
+
+        {isReadModalOpen && (
+          <ReadModal
+            fileName={fileName}
+            onChangeName={setFileName}
+            onUpload={handleFileUpload}
+            onClose={() => {
+              setIsReadModalOpen(false)
+              setFileName('')
             }}
           />
-        </div>
-      )}
+        )}
 
-      {isReadModalOpen && (
-        <ReadModal
-          fileName={fileName}
-          onChangeName={setFileName}
-          onUpload={handleFileUpload}
-          onClose={() => {
-            setIsReadModalOpen(false)
-            setFileName('')
-          }}
-        />
-      )}
-
-      {isNameModalOpen && (
-        <NameModal
-          fileName={fileName}
-          onChangeName={setFileName}
-          onConfirm={handleStartWriting}
-          onClose={() => {
-            setIsNameModalOpen(false)
-            setFileName('')
-          }}
-        />
-      )}
+        {isNameModalOpen && (
+          <NameModal
+            fileName={fileName}
+            onChangeName={setFileName}
+            onConfirm={handleStartWriting}
+            onClose={() => {
+              setIsNameModalOpen(false)
+              setFileName('')
+            }}
+          />
+        )}
+      </div>
 
       <AddFab
         disabled={!isMetaReady}

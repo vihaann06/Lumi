@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 // Hooks
 import { usePDFViewer } from '../hooks/usePDFViewer';
@@ -24,6 +25,8 @@ import { Sparkles } from 'lucide-react';
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 export default function ReaderScreen() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   // PDF Viewer hook
   const {
     pdfFile,
@@ -67,6 +70,18 @@ export default function ReaderScreen() {
   const [menuPosition, setMenuPosition] = useState(null);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [fileName, setFileName] = useState('Lumi');
+
+  // Derive file name from query or session storage
+  useEffect(() => {
+    const fromQuery = searchParams.get('fileName');
+    if (fromQuery) {
+      setFileName(fromQuery);
+      return;
+    }
+    const stored = typeof window !== 'undefined' ? sessionStorage.getItem('pdfFileName') : null;
+    if (stored) setFileName(stored);
+  }, [searchParams]);
 
   // Handle text selection
   const handleTextSelection = (e) => {
@@ -231,14 +246,19 @@ export default function ReaderScreen() {
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-8 py-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20">
-            <Sparkles className="w-5 h-5 text-white" />
-          </div>
+          <button
+            type="button"
+            onClick={() => router.push('/')}
+            className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20"
+            aria-label="Go to home"
+          >
+            <Sparkles className="w-6 h-6 text-white" />
+          </button>
           <div className="leading-tight">
             <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 font-semibold">
               Lumi
             </p>
-            <h1 className="text-lg font-semibold text-slate-900">Reader</h1>
+            <h1 className="text-lg font-semibold text-slate-900">{fileName || 'Lumi'}</h1>
           </div>
         </div>
 
