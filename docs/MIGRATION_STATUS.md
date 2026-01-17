@@ -12,9 +12,9 @@
 - ✅ `SelectionMenu.jsx` → `app/components/reader/SelectionMenu.jsx`
 
 ### Hooks
-- ✅ `useAIActions.js` → `app/hooks/useAIActions.js` (imports updated)
-- ✅ `useHighlights.js` → `app/hooks/useHighlights.js` (imports updated)
-- ✅ `usePDFViewer.js` → `app/hooks/usePDFViewer.js` (imports updated)
+- ✅ `useAIActions.js` → `hooks/useAIActions.js` (imports updated)
+- ✅ `useHighlights.js` → `hooks/useHighlights.js` (imports updated)
+- ✅ `usePDFViewer.js` → `hooks/usePDFViewer.js` (imports updated)
 
 ### Services
 - ✅ `openaiService.js` → `lib/services/ai/openaiService.ts`

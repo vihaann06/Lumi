@@ -7,18 +7,18 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 // Hooks
-import { usePDFViewer } from '../hooks/usePDFViewer';
-import { useHighlights } from '../hooks/useHighlights';
-import { useAIActions } from '../hooks/useAIActions';
+import { usePDFViewer } from '@/hooks/usePDFViewer';
+import { useHighlights } from '@/hooks/useHighlights';
+import { useAIActions } from '@/hooks/useAIActions';
 
 // Services
-import { chatWithAI } from '@/lib/services/ai/openaiService';
+import { chatWithAI } from '@/lib/services/ai/actions';
 
 // Components
-import PDFViewer from './reader/PDFViewer';
-import SelectionMenu from './reader/SelectionMenu';
-import ExplanationPanel from './reader/ExplanationPanel';
-import PageHighlights from './reader/PageHighlights';
+import PDFViewer from '../../components/reader/PDFViewer';
+import SelectionMenu from '../../components/reader/SelectionMenu';
+import ExplanationPanel from '../../components/reader/ExplanationPanel';
+import PageHighlights from '../../components/reader/PageHighlights';
 import { Sparkles } from 'lucide-react';
 
 // Set up PDF.js worker

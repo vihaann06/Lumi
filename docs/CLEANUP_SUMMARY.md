@@ -10,7 +10,7 @@
 ### Legacy Source Directory
 - ✅ Entire `/src` directory - All files migrated to new structure:
   - Components → `app/components/`
-  - Hooks → `app/hooks/`
+  - Hooks → `hooks/`
   - Services → `lib/services/`
   - Utils → `lib/utils/`
   - Styles → `app/styles/globals.css`

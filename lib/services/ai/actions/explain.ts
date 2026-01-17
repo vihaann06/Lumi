@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAISummary } from '@/lib/services/ai/openaiService'
+import { getAIExplanation } from './index'
 
 /**
- * POST /api/ai/summary
- * Get AI summary for selected text
+ * POST /api/ai/explain
+ * Get AI explanation for selected text
  */
 export async function POST(request: NextRequest) {
   try {
@@ -16,13 +16,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const summary = await getAISummary(text)
+    const explanation = await getAIExplanation(text)
     
-    return NextResponse.json({ summary })
+    return NextResponse.json({ explanation })
   } catch (error) {
-    console.error('Error getting AI summary:', error)
+    console.error('Error getting AI explanation:', error)
     return NextResponse.json(
-      { error: 'Failed to get summary' },
+      { error: 'Failed to get explanation' },
       { status: 500 }
     )
   }

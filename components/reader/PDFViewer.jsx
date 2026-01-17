@@ -1,7 +1,7 @@
 import React from 'react';
 import { Document, Page } from 'react-pdf';
 import { Loader2 } from 'lucide-react';
-import HighlightOverlay from './HighlightOverlay';
+import HighlightOverlay from '../../components/reader/HighlightOverlay';
 
 /**
  * PDF Viewer Component

@@ -9,7 +9,7 @@ import DocumentList from '../../../components/folders/DocumentList'
 import AddFab from '../../../components/folders/AddFab'
 import NameModal from '../../../components/folders/NameModal'
 import ReadModal from '../../../components/folders/ReadModal'
-import { generateThumbnail } from './utils/thumbnails'
+import { generateThumbnail } from '../../../lib/utils/thumbnails'
 import RenameModal from '../../../components/folders/RenameModal'
 export default function FolderPage() {
   const params = useParams<{ id: string }>()

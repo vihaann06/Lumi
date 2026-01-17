@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal } from 'lucide-react'
-import { getSupabaseClient } from '@/lib/supabaseClient'
+import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { DocRow } from '../useFolderData'
 
 type Props = {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Writer from '../../../../components/writer/Writer'
-import { getSupabaseClient } from '@/lib/supabaseClient'
+import { getSupabaseClient } from '@/lib/db/supabaseClient'
 
 export default function FolderWritePage() {
   const params = useParams<{ id: string }>()

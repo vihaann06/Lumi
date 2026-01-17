@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getSupabaseClient } from '@/lib/supabaseClient'
+import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import HomeHeader from './HomeHeader'
 import FoldersHeader from './FoldersHeader'
 import FoldersList from './FoldersList'

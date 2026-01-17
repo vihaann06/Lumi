@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react';
-import { getAIExplanation, getAISummary, getReferenceCheck } from '@/lib/services/ai/openaiService';
+import { getAIExplanation, getAISummary, getReferenceCheck } from '@/lib/services/ai/actions';
 
 /**
  * Custom hook for AI actions (explanation, summary, reference check)

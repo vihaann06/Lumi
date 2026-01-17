@@ -27,12 +27,13 @@ lumi/
 │   │   │   └── SelectionMenu.jsx
 │   │   ├── ReaderScreen.jsx
 │   │   └── UploadScreen.jsx
-│   ├── hooks/                    # React hooks
-│   │   ├── useAIActions.js
-│   │   ├── useHighlights.js
-│   │   └── usePDFViewer.js
 │   ├── layout.tsx                # Root layout
 │   └── page.tsx                  # Home page (upload)
+│
+├── hooks/                        # React hooks (shared)
+│   ├── useAIActions.js
+│   ├── useHighlights.js
+│   └── usePDFViewer.js
 │
 ├── lib/                          # Shared library code
 │   ├── types/                    # TypeScript type definitions

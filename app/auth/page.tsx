@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getSupabaseClient } from '@/lib/supabaseClient'
+import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { ArrowLeft, Loader2, Sparkles } from 'lucide-react'
 
 type AuthMode = 'signin' | 'signup'

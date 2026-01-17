@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { chatWithAI } from '@/lib/services/ai/openaiService'
+import { chatWithAI } from './index'
 
 /**
  * POST /api/ai/chat

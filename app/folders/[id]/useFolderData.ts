@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { getSupabaseClient } from '@/lib/supabaseClient'
-import { getCurrentUserId } from '@/lib/services/auth'
-import { ensureWorkspaceForUser } from '@/lib/services/workspaces'
-import { getFolderMeta, listFolderDocuments } from '@/lib/services/folders'
-import { createDocument } from '@/lib/services/documents'
+import { getSupabaseClient } from '@/lib/db/supabaseClient'
+import { getCurrentUserId } from '@/lib/db/queries/auth'
+import { ensureWorkspaceForUser } from '@/lib/db/queries/workspaces'
+import { getFolderMeta, listFolderDocuments } from '@/lib/db/queries/folders'
+import { createDocument } from '@/lib/db/queries/documents'
 
 export type DocRow = {
   id: string
