@@ -10,10 +10,12 @@ export async function generateThumbnail(file: File) {
     const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise
     const page = await pdf.getPage(1)
 
-    const targetWidth = 360
-    const targetHeight = 240 // 3:2 aspect
+    // Store a larger thumbnail to preserve detail; we downscale in the UI.
+    const targetWidth = 1080
+    const targetHeight = 720 // 3:2 aspect
+    const pixelRatio = 6 // render higher-res then downscale for sharper result
     const viewport = page.getViewport({ scale: 1 })
-    const scale = targetWidth / viewport.width
+    const scale = (targetWidth * pixelRatio) / viewport.width
     const scaledViewport = page.getViewport({ scale })
 
     // Render to an offscreen canvas at the scaled viewport size
@@ -22,6 +24,8 @@ export async function generateThumbnail(file: File) {
     if (!renderContext) return null
     renderCanvas.width = scaledViewport.width
     renderCanvas.height = scaledViewport.height
+    renderContext.imageSmoothingEnabled = true
+    renderContext.imageSmoothingQuality = 'high'
 
     await page.render({ canvasContext: renderContext, viewport: scaledViewport }).promise
 
@@ -31,6 +35,8 @@ export async function generateThumbnail(file: File) {
     finalCanvas.height = targetHeight
     const finalCtx = finalCanvas.getContext('2d')
     if (!finalCtx) return null
+    finalCtx.imageSmoothingEnabled = true
+    finalCtx.imageSmoothingQuality = 'high'
 
     const scaleCover = Math.max(targetWidth / renderCanvas.width, targetHeight / renderCanvas.height)
     const drawWidth = renderCanvas.width * scaleCover
@@ -51,7 +57,7 @@ export async function generateThumbnail(file: File) {
     )
 
     return await new Promise<Blob | null>((resolve) => {
-      finalCanvas.toBlob((blob) => resolve(blob), 'image/png', 0.8)
+      finalCanvas.toBlob((blob) => resolve(blob), 'image/png', 0.98)
     })
   } catch (err) {
     console.warn('Thumbnail generation failed', err)
