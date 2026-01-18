@@ -79,6 +79,7 @@ export default function ReaderScreen() {
   const [menuPosition, setMenuPosition] = useState(null);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isDeletingHighlight, setIsDeletingHighlight] = useState(false);
   const [fileName, setFileName] = useState('Lumi');
   const workspaceId = docMeta?.workspaceId;
   const folderId = docMeta?.folderId || folderIdParam;
@@ -536,6 +537,45 @@ export default function ReaderScreen() {
     }
   };
 
+  const removeHighlightFromState = (pageNum, targetId) => {
+    setHighlights((prev) => {
+      const pageHighlights = prev[pageNum] || [];
+      const filtered = pageHighlights.filter(
+        (h) => h.id !== targetId && h.annotationId !== targetId
+      );
+      return {
+        ...prev,
+        [pageNum]: filtered,
+      };
+    });
+  };
+
+  const handleDeleteHighlight = async () => {
+    if (!selectedHighlightId) return;
+    const { pageNum, highlightId } = selectedHighlightId;
+    const target = (highlights[pageNum] || []).find(
+      (h) => h.id === highlightId || h.annotationId === highlightId
+    );
+    if (!target) return;
+
+    setIsDeletingHighlight(true);
+    try {
+      if (supabase && target.annotationId) {
+        await supabase.from('annotations').delete().eq('id', target.annotationId);
+      }
+    } catch (error) {
+      console.error('Failed to delete highlight', error);
+    } finally {
+      setIsDeletingHighlight(false);
+    }
+
+    removeHighlightFromState(pageNum, target.annotationId || target.id);
+    clearSelectedHighlight();
+    clearAIActions();
+    setSelectedText('');
+    setSelectedRange(null);
+  };
+
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -627,7 +667,9 @@ export default function ReaderScreen() {
           summary={summary}
           referenceCheck={referenceCheck}
           onSendChatMessage={handleSendChatMessage}
-          isChatLoading={isChatLoading}
+        isChatLoading={isChatLoading}
+        onDeleteHighlight={handleDeleteHighlight}
+        isDeletingHighlight={isDeletingHighlight}
         />
       </div>
     </div>

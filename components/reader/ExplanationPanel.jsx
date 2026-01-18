@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Loader2, Lightbulb, FileText, Search, ChevronRight, ChevronLeft, Send } from 'lucide-react';
+import { Loader2, Lightbulb, FileText, Search, ChevronRight, ChevronLeft, Send, Trash } from 'lucide-react';
 import { truncateTextForDisplay } from '@/lib/utils/highlightUtils';
 
 /**
@@ -17,7 +17,9 @@ export default function ExplanationPanel({
   summary,
   referenceCheck,
   onSendChatMessage,
-  isChatLoading
+  isChatLoading,
+  onDeleteHighlight,
+  isDeletingHighlight
 }) {
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef(null);
@@ -66,13 +68,29 @@ export default function ExplanationPanel({
           <Lightbulb className="w-4 h-4 text-indigo-500" />
           AI Explanation
         </h2>
-        <button
-          onClick={onToggleCollapse}
-          className="p-1.5 hover:bg-slate-100/50 rounded-lg transition-colors"
-          title="Collapse panel"
-        >
-          <ChevronRight className="w-4 h-4 text-slate-400" />
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedHighlight && onDeleteHighlight ? (
+            <button
+              onClick={onDeleteHighlight}
+              disabled={isDeletingHighlight}
+              className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              title="Delete highlight"
+            >
+              {isDeletingHighlight ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash className="w-4 h-4" />
+              )}
+            </button>
+          ) : null}
+          <button
+            onClick={onToggleCollapse}
+            className="p-1.5 hover:bg-slate-100/50 rounded-lg transition-colors"
+            title="Collapse panel"
+          >
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
+        </div>
       </div>
       
       <div className="flex-1 flex flex-col overflow-hidden">
