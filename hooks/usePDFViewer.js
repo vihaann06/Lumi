@@ -13,6 +13,7 @@ export const usePDFViewer = () => {
   const searchParams = useSearchParams();
   const supabase = getSupabaseClient();
   const docId = searchParams.get('docId');
+  const [docMeta, setDocMeta] = useState(null);
   const [pdfFile, setPdfFile] = useState(() => {
     const fileUrl = searchParams.get('fileUrl');
     if (fileUrl) return fileUrl;
@@ -47,12 +48,12 @@ export const usePDFViewer = () => {
   // If the PDF isn't in session/query but we have a docId, fetch it from Supabase Storage
   useEffect(() => {
     const loadFromStorage = async () => {
-      if (!supabase || !docId || pdfFile || isFetchingDoc) return;
+      if (!supabase || !docId || isFetchingDoc || docMeta) return;
       setIsFetchingDoc(true);
       try {
         const { data: docRow, error: docError } = await supabase
           .from('documents')
-          .select('file_bucket, file_path, title')
+          .select('file_bucket, file_path, title, workspace_id, folder_id, account_id')
           .eq('id', docId)
           .maybeSingle();
 
@@ -61,29 +62,38 @@ export const usePDFViewer = () => {
           return;
         }
 
-        const { data: blob, error: downloadError } = await supabase.storage
-          .from(docRow.file_bucket)
-          .download(docRow.file_path);
+        if (!pdfFile) {
+          const { data: blob, error: downloadError } = await supabase.storage
+            .from(docRow.file_bucket)
+            .download(docRow.file_path);
 
-        if (downloadError || !blob) {
-          router.push('/');
-          return;
+          if (downloadError || !blob) {
+            router.push('/');
+            return;
+          }
+
+          // Create an object URL for the viewer
+          const objectUrl = URL.createObjectURL(blob);
+          setPdfFile(objectUrl);
+
+          // Store in sessionStorage for reloads
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = reader.result;
+            if (base64) {
+              sessionStorage.setItem('pdfFile', base64);
+              if (docRow.title) sessionStorage.setItem('pdfFileName', docRow.title);
+            }
+          };
+          reader.readAsDataURL(blob);
         }
 
-        // Create an object URL for the viewer
-        const objectUrl = URL.createObjectURL(blob);
-        setPdfFile(objectUrl);
-
-        // Store in sessionStorage for reloads
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result;
-          if (base64) {
-            sessionStorage.setItem('pdfFile', base64);
-            if (docRow.title) sessionStorage.setItem('pdfFileName', docRow.title);
-          }
-        };
-        reader.readAsDataURL(blob);
+        setDocMeta({
+          workspaceId: docRow.workspace_id,
+          folderId: docRow.folder_id,
+          accountId: docRow.account_id,
+          title: docRow.title || null
+        });
       } finally {
         setIsFetchingDoc(false);
       }
@@ -135,6 +145,8 @@ export const usePDFViewer = () => {
   };
 
   return {
+    docId,
+    docMeta,
     pdfFile,
     numPages,
     pageWidth,

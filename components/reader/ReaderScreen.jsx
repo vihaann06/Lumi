@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, useParams } from 'next/navigation';
 
 // Hooks
 import { usePDFViewer } from '@/hooks/usePDFViewer';
@@ -13,6 +13,7 @@ import { useAIActions } from '@/hooks/useAIActions';
 
 // Services
 import { chatWithAI } from '@/lib/services/ai/actions';
+import { getSupabaseClient } from '@/lib/db/supabaseClient';
 
 // Components
 import PDFViewer from '../../components/reader/PDFViewer';
@@ -27,8 +28,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
 export default function ReaderScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const params = useParams();
+  const supabase = getSupabaseClient();
+  const folderIdParam = params?.id ?? null;
+  const [authUser, setAuthUser] = useState(null);
   // PDF Viewer hook
   const {
+    docId,
+    docMeta,
     pdfFile,
     numPages,
     pageWidth,
@@ -46,7 +53,9 @@ export default function ReaderScreen() {
     selectHighlight,
     getSelectedHighlight,
     clearSelectedHighlight,
-    updateHighlightChatHistory
+    updateHighlightChatHistory,
+    setHighlightsMap,
+    updateHighlight
   } = useHighlights(currentPageInView, pdfContainerRef);
 
   // AI Actions hook - pass callback to create AI highlights
@@ -71,6 +80,252 @@ export default function ReaderScreen() {
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [fileName, setFileName] = useState('Lumi');
+  const workspaceId = docMeta?.workspaceId;
+  const folderId = docMeta?.folderId || folderIdParam;
+  const accountId = authUser?.id;
+
+  // Auth state
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthUser(data.session?.user ?? null);
+    });
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+    });
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  // Load persisted annotations + threads
+  useEffect(() => {
+    const loadAnnotations = async () => {
+      if (!supabase || !docId) return;
+      const { data: annotations, error } = await supabase
+        .from('annotations')
+        .select('id, page, quote, anchor_json, has_thread')
+        .eq('doc_id', docId);
+      if (error) {
+        console.error('Failed to load annotations', error);
+        return;
+      }
+
+      const annotationIds = annotations?.map((a) => a.id) || [];
+      let threads = [];
+      if (annotationIds.length) {
+        const { data: threadRows, error: threadError } = await supabase
+          .from('threads')
+          .select('id, annotation_id')
+          .in('annotation_id', annotationIds);
+        if (!threadError && threadRows) {
+          threads = threadRows;
+        }
+      }
+
+      const threadIdByAnnotation = threads.reduce((acc, t) => {
+        acc[t.annotation_id] = t.id;
+        return acc;
+      }, {});
+
+      const threadIds = threads.map((t) => t.id);
+      let messages = [];
+      if (threadIds.length) {
+        const { data: msgRows, error: msgError } = await supabase
+          .from('thread_messages')
+          .select('id, thread_id, role, content, created_at')
+          .in('thread_id', threadIds)
+          .order('created_at', { ascending: true });
+        if (!msgError && msgRows) {
+          messages = msgRows;
+        }
+      }
+
+      const messagesByThread = threadIds.reduce((acc, id) => {
+        acc[id] = [];
+        return acc;
+      }, {});
+      messages.forEach((m) => {
+        if (!messagesByThread[m.thread_id]) messagesByThread[m.thread_id] = [];
+        messagesByThread[m.thread_id].push({
+          role: m.role,
+          content: m.content,
+          timestamp: new Date(m.created_at).getTime()
+        });
+      });
+
+      const map = {};
+      annotations?.forEach((annotation) => {
+        const anchor = annotation.anchor_json || {};
+        const storedRects = anchor.rects || [];
+        const storedWidth = anchor.pageWidth || null;
+        const scale =
+          storedWidth && pageWidth ? pageWidth / storedWidth : 1;
+        const rects = storedRects.map((r) => ({
+          ...r,
+          x: r.x * scale,
+          y: r.y * scale,
+          width: r.width * scale,
+          height: r.height * scale
+        }));
+        const aiType = anchor.aiType ?? null;
+        const aiContent = anchor.aiContent ?? null;
+        const storedChat = anchor.chatHistory || [];
+        const threadId = threadIdByAnnotation[annotation.id];
+        const chatHistory = threadId ? messagesByThread[threadId] || storedChat : storedChat;
+
+        const highlight = {
+          id: annotation.id,
+          annotationId: annotation.id,
+          text: annotation.quote,
+          rects,
+          aiType,
+          aiContent: aiContent || chatHistory?.[0]?.content || null,
+          chatHistory: chatHistory || [],
+          threadId
+        };
+
+        if (!map[annotation.page]) map[annotation.page] = [];
+        map[annotation.page].push(highlight);
+      });
+
+      setHighlightsMap(map);
+    };
+
+    loadAnnotations();
+  }, [supabase, docId, setHighlightsMap, pageWidth]);
+
+  const persistHighlight = async (pageNum, highlight) => {
+    if (!supabase || !docId || !workspaceId || !folderId || !accountId) return;
+
+    const anchor = {
+      rects: highlight.rects || [],
+      aiType: highlight.aiType || null,
+      aiContent: highlight.aiContent || null,
+      chatHistory: highlight.chatHistory || [],
+      pageWidth: pageWidth || null
+    };
+
+    const { data: inserted, error } = await supabase
+      .from('annotations')
+      .insert({
+        workspace_id: workspaceId,
+        folder_id: folderId,
+        doc_id: docId,
+        account_id: accountId,
+        created_by: accountId,
+        page: pageNum,
+        quote: highlight.text,
+        anchor_json: anchor,
+        has_thread: highlight.aiType === 'explanation'
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('Failed to persist annotation', error);
+      return;
+    }
+
+    const annotationId = inserted?.id;
+    if (annotationId) {
+      updateHighlight(pageNum, highlight.id, { id: annotationId, annotationId });
+      if (selectedHighlightId?.highlightId === highlight.id) {
+        selectHighlight(pageNum, annotationId);
+      }
+    }
+
+    let threadId = highlight.threadId;
+
+    if (highlight.aiType === 'explanation' && annotationId) {
+      const { data: threadRow, error: threadError } = await supabase
+        .from('threads')
+        .insert({
+          workspace_id: workspaceId,
+          folder_id: folderId,
+          doc_id: docId,
+          annotation_id: annotationId,
+          account_id: accountId,
+          created_by: accountId,
+          kind: 'highlight_chat',
+          title: highlight.text?.slice(0, 120) || 'Highlight chat'
+        })
+        .select('id')
+        .single();
+
+      if (!threadError && threadRow?.id) {
+        threadId = threadRow.id;
+        if (highlight.chatHistory?.length) {
+          const rows = highlight.chatHistory.map((msg) => ({
+            thread_id: threadId,
+            workspace_id: workspaceId,
+            account_id: accountId,
+            role: msg.role,
+            content: msg.content,
+            content_json: {},
+            citations_json: [],
+            created_by: accountId
+          }));
+          await supabase.from('thread_messages').insert(rows);
+        }
+
+        await supabase
+          .from('annotations')
+          .update({
+            has_thread: true,
+            anchor_json: { ...anchor, threadId }
+          })
+          .eq('id', annotationId);
+      }
+    }
+
+    if (threadId) {
+      updateHighlight(pageNum, annotationId || highlight.id, { threadId });
+    }
+
+    return { annotationId: annotationId || highlight.id, threadId };
+  };
+
+  const ensureThreadForHighlight = async (pageNum, highlight) => {
+    if (highlight.threadId) return highlight.threadId;
+    const anchor = {
+      rects: highlight.rects || [],
+      aiType: highlight.aiType || null,
+      aiContent: highlight.aiContent || null,
+      chatHistory: highlight.chatHistory || []
+    };
+
+    const { data: threadRow, error } = await supabase
+      .from('threads')
+      .insert({
+        workspace_id: workspaceId,
+        folder_id: folderId,
+        doc_id: docId,
+        annotation_id: highlight.annotationId,
+        account_id: accountId,
+        created_by: accountId,
+        kind: 'highlight_chat',
+        title: highlight.text?.slice(0, 120) || 'Highlight chat'
+      })
+      .select('id')
+      .single();
+
+    if (error || !threadRow?.id) {
+      console.error('Failed to create thread for highlight', error);
+      return null;
+    }
+
+    await supabase
+      .from('annotations')
+      .update({
+        has_thread: true,
+        anchor_json: { ...anchor, threadId: threadRow.id }
+      })
+      .eq('id', highlight.annotationId);
+
+    updateHighlight(pageNum, highlight.id, { threadId: threadRow.id });
+    return threadRow.id;
+  };
 
   // Derive file name from query or session storage
   useEffect(() => {
@@ -122,7 +377,10 @@ export default function ReaderScreen() {
   // Handle highlight creation
   const handleHighlight = () => {
     if (selectedText && selectedRange) {
-      addHighlight(selectedText, selectedRange, currentPageInView);
+      const result = addHighlight(selectedText, selectedRange, currentPageInView);
+      if (result?.highlight) {
+        persistHighlight(result.pageNum, result.highlight);
+      }
       setSelectedText(selectedText);
       setMenuPosition(null);
       setSelectedRange(null);
@@ -153,13 +411,18 @@ export default function ReaderScreen() {
     
     // Automatically select the highlight to show chat interface
     if (highlightResult && highlightResult.highlight) {
-      selectHighlight(highlightResult.pageNum, highlightResult.highlight.id);
+      const persisted = await persistHighlight(highlightResult.pageNum, highlightResult.highlight);
+      const resolvedId = persisted?.annotationId || highlightResult.highlight.id;
+      selectHighlight(highlightResult.pageNum, resolvedId);
       setSelectedText(highlightResult.highlight.text);
     }
   };
 
   const handleAISummaryClick = async () => {
-    await handleAISummary(selectedText, selectedRange, currentPageInView);
+    const highlightResult = await handleAISummary(selectedText, selectedRange, currentPageInView);
+    if (highlightResult?.highlight) {
+      await persistHighlight(highlightResult.pageNum, highlightResult.highlight);
+    }
     setMenuPosition(null);
     // Summaries don't have chat functionality, so we don't auto-select them
   };
@@ -184,6 +447,29 @@ export default function ReaderScreen() {
     // Update highlight with user message
     updateHighlightChatHistory(pageNum, highlightId, updatedChatHistory);
 
+    const effectiveHighlight = {
+      ...selectedHighlight,
+      annotationId: selectedHighlight.annotationId || selectedHighlight.id,
+    };
+
+    let threadId = effectiveHighlight.threadId;
+    if (!threadId) {
+      threadId = await ensureThreadForHighlight(pageNum, effectiveHighlight);
+    }
+
+    if (threadId && supabase && accountId && workspaceId) {
+      await supabase.from('thread_messages').insert({
+        thread_id: threadId,
+        workspace_id: workspaceId,
+        account_id: accountId,
+        role: 'user',
+        content: message,
+        content_json: {},
+        citations_json: [],
+        created_by: accountId
+      });
+    }
+
     // Get AI response
     setIsChatLoading(true);
     try {
@@ -204,6 +490,35 @@ export default function ReaderScreen() {
       ];
 
       updateHighlightChatHistory(pageNum, highlightId, finalChatHistory);
+
+      if (threadId && supabase && accountId && workspaceId) {
+        await supabase.from('thread_messages').insert({
+          thread_id: threadId,
+          workspace_id: workspaceId,
+          account_id: accountId,
+          role: 'assistant',
+          content: aiResponse,
+          content_json: {},
+          citations_json: [],
+          created_by: accountId
+        });
+      }
+
+      if (effectiveHighlight.annotationId && supabase) {
+        await supabase
+          .from('annotations')
+          .update({
+            anchor_json: {
+              rects: effectiveHighlight.rects || [],
+              aiType: effectiveHighlight.aiType,
+              aiContent: finalChatHistory?.[0]?.content || effectiveHighlight.aiContent || null,
+              chatHistory: finalChatHistory,
+              threadId,
+              pageWidth: pageWidth || null
+            }
+          })
+          .eq('id', effectiveHighlight.annotationId);
+      }
     } catch (error) {
       console.error('Error sending chat message:', error);
       // Add error message to chat history
