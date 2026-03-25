@@ -122,7 +122,12 @@ export default function WritingAIPanel({
             {activeRefs.map((ref, idx) => (
               <div
                 key={ref.id}
-                className="flex items-center gap-1.5 text-xs bg-white rounded-md border border-slate-200 pl-2 pr-1 py-1"
+                className="flex items-center gap-1.5 text-xs bg-white rounded-md border border-slate-200 pl-2 pr-1 py-1 cursor-grab active:cursor-grabbing"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/lumi-reference', JSON.stringify(ref))
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
               >
                 <span className="text-indigo-500 font-semibold">R{idx + 1}</span>
                 <span className="text-slate-500 max-w-[100px] truncate">

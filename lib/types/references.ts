@@ -11,6 +11,14 @@ export interface Reference {
   createdAt: string;
 }
 
+export interface FileReference {
+  id: string;
+  accountId: string;
+  fileId: string;
+  referenceId: string;
+  createdAt: string;
+}
+
 export interface ReferenceInsert {
   folderId: string;
   sourceDocId: string;

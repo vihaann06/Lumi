@@ -11,6 +11,7 @@ import { usePDFViewer } from '@/hooks/usePDFViewer';
 import { useHighlights } from '@/hooks/useHighlights';
 import { useAIActions } from '@/hooks/useAIActions';
 import { useReferences } from '@/hooks/useReferences';
+import { useFileReferences } from '@/hooks/useFileReferences';
 
 // Services
 import { chatWithAI } from '@/lib/services/ai/actions';
@@ -106,14 +107,10 @@ export default function ReaderScreen() {
     };
   }, [supabase]);
 
-  // References hook
-  const {
-    references,
-    addReference,
-    removeReference,
-  } = useReferences(folderId);
+  // References: folder-level creation + file-scoped attachment
+  const { addReference } = useReferences(folderId);
+  const { references: fileRefs, attach: attachToFile, detach: detachFromFile } = useFileReferences(docId);
   const [refSavedFlash, setRefSavedFlash] = useState(false);
-  const [refTrayOpen, setRefTrayOpen] = useState(false);
 
   // Load persisted annotations + threads
   useEffect(() => {
@@ -591,7 +588,7 @@ export default function ReaderScreen() {
     setSelectedRange(null);
   };
 
-  // Save reference from selected text
+  // Save reference and attach it to the current file
   const handleSaveReference = async () => {
     if (!selectedText || !docId || !folderId || !accountId) return;
     const ref = await addReference(accountId, {
@@ -602,6 +599,8 @@ export default function ReaderScreen() {
       selectedText,
     });
     if (ref) {
+      // Attach to the current document so it shows in this file's AI chat
+      await attachToFile(accountId, ref.id);
       setRefSavedFlash(true);
       setTimeout(() => setRefSavedFlash(false), 2000);
     }
@@ -625,13 +624,14 @@ export default function ReaderScreen() {
   const selectedHighlight = getSelectedHighlight();
   const currentPageHighlights = highlights[currentPageInView] || [];
 
-  // Only show the right panel when there's AI content or a highlight is selected
+  // Only show the right panel when there's AI content, a highlight is selected, or file has references
   const showRightPanel = !!(
     isLoading ||
     explanation ||
     summary ||
     referenceCheck ||
-    selectedHighlight
+    selectedHighlight ||
+    fileRefs.length
   );
 
   if (!pdfFile) {
@@ -762,83 +762,76 @@ export default function ReaderScreen() {
               className="bg-white border-l border-slate-200/60 flex flex-col overflow-hidden flex-shrink-0"
               style={{ width: rightPanelWidth }}
             >
-              <ExplanationPanel
-                isCollapsed={false}
-                onToggleCollapse={() => {}}
-                selectedText={selectedText}
-                selectedHighlight={selectedHighlight}
-                isLoading={isLoading}
-                explanation={explanation}
-                summary={summary}
-                referenceCheck={referenceCheck}
-                onSendChatMessage={handleSendChatMessage}
-                isChatLoading={isChatLoading}
-                onDeleteHighlight={handleDeleteHighlight}
-                isDeletingHighlight={isDeletingHighlight}
-              />
+              {/* Show ExplanationPanel only when there's AI content or a highlight */}
+              {(isLoading || explanation || summary || referenceCheck || selectedHighlight) && (
+                <ExplanationPanel
+                  isCollapsed={false}
+                  onToggleCollapse={() => {}}
+                  selectedText={selectedText}
+                  selectedHighlight={selectedHighlight}
+                  isLoading={isLoading}
+                  explanation={explanation}
+                  summary={summary}
+                  referenceCheck={referenceCheck}
+                  onSendChatMessage={handleSendChatMessage}
+                  isChatLoading={isChatLoading}
+                  onDeleteHighlight={handleDeleteHighlight}
+                  isDeletingHighlight={isDeletingHighlight}
+                />
+              )}
+
+              {/* File-scoped reference chips — click to send to another file */}
+              {fileRefs.length > 0 && (
+                <div className={`${(isLoading || explanation || summary || referenceCheck || selectedHighlight) ? 'border-t border-slate-200/60' : ''} bg-white flex flex-col flex-1`}>
+                  <div className="px-4 py-3 flex items-center justify-between">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      References ({fileRefs.length})
+                    </p>
+                    <p className="text-[10px] text-slate-400">Drag to a file to attach</p>
+                  </div>
+                  <div className="px-3 pb-3 space-y-2 overflow-y-auto flex-1">
+                    {fileRefs.map((ref, idx) => (
+                      <div
+                        key={ref.id}
+                        className="flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('application/lumi-reference', JSON.stringify(ref));
+                          e.dataTransfer.effectAllowed = 'copy';
+                        }}
+                      >
+                        <BookmarkCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="font-semibold text-indigo-500">R{idx + 1}</span>
+                            <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
+                            {ref.pageNumber && <span className="text-slate-400">p.{ref.pageNumber}</span>}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                            &ldquo;{ref.selectedText}&rdquo;
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            detachFromFile(ref.id);
+                          }}
+                          className="p-0.5 text-slate-400 hover:text-rose-500 flex-shrink-0"
+                          title="Remove from this file"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
 
-      {/* Reference bubble - bottom left */}
-      <div className="absolute bottom-5 left-5 z-40">
-        {refTrayOpen && (
-          <div className="absolute bottom-14 left-0 w-80 max-h-96 bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <div className="px-3 py-2.5 border-b border-slate-200 flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">References</span>
-              <span className="text-xs text-slate-400">{references.length} collected</span>
-            </div>
-            {references.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-slate-400">
-                Select text and click &ldquo;Reference&rdquo; to collect evidence.
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-                {references.map((ref, idx) => (
-                  <div key={ref.id} className="group px-3 py-2.5 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 text-xs min-w-0">
-                        <span className="font-semibold text-indigo-500 flex-shrink-0">R{idx + 1}</span>
-                        <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
-                        {ref.pageNumber && <span className="text-slate-400 flex-shrink-0">p.{ref.pageNumber}</span>}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeReference(ref.id)}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition-opacity flex-shrink-0"
-                        title="Remove"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500 leading-relaxed line-clamp-2">
-                      &ldquo;{ref.selectedText}&rdquo;
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={() => setRefTrayOpen((v) => !v)}
-          className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-colors ${
-            refTrayOpen
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200'
-          }`}
-          title="References"
-        >
-          <BookmarkCheck className="w-5 h-5" />
-          {references.length > 0 && !refTrayOpen && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">
-              {references.length}
-            </span>
-          )}
-        </button>
-      </div>
     </div>
   );
 }

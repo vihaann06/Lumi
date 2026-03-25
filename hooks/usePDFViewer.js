@@ -14,23 +14,26 @@ export const usePDFViewer = () => {
   const supabase = getSupabaseClient();
   const docId = searchParams.get('docId');
   const [docMeta, setDocMeta] = useState(null);
-  const [pdfFile, setPdfFile] = useState(() => {
+  const [pdfFile, setPdfFile] = useState(null);
+
+  // Hydration-safe: resolve pdfFile from URL param or sessionStorage after mount
+  useEffect(() => {
     const fileUrl = searchParams.get('fileUrl');
-    if (fileUrl) return fileUrl;
-    // Fallback to sessionStorage
-    const base64 = typeof window !== 'undefined' ? sessionStorage.getItem('pdfFile') : null;
+    if (fileUrl) { setPdfFile(fileUrl); return; }
+    const base64 = sessionStorage.getItem('pdfFile');
     if (base64) {
-      const byteCharacters = atob(base64.split(',')[1]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      return URL.createObjectURL(blob);
+      try {
+        const byteCharacters = atob(base64.split(',')[1]);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        setPdfFile(URL.createObjectURL(blob));
+      } catch { /* ignore corrupt sessionStorage */ }
     }
-    return null;
-  });
+  }, [searchParams]);
   const [numPages, setNumPages] = useState(null);
   const [pageWidth, setPageWidth] = useState(800);
   const [currentPageInView, setCurrentPageInView] = useState(1);
