@@ -81,8 +81,12 @@ export const usePDFViewer = () => {
           reader.onload = () => {
             const base64 = reader.result;
             if (base64) {
+            try {
               sessionStorage.setItem('pdfFile', base64);
               if (docRow.title) sessionStorage.setItem('pdfFileName', docRow.title);
+            } catch (err) {
+              console.warn('Skipping sessionStorage cache for PDF (likely too large):', err);
+            }
             }
           };
           reader.readAsDataURL(blob);

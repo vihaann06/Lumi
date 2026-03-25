@@ -1,12 +1,11 @@
 'use client'
 
-import { ChangeEvent, useState } from 'react'
+import { ChangeEvent, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import { useFolderData } from './useFolderData'
-import FolderHeader from '../../../components/folders/FolderHeader'
+// Header removed for edge-to-edge layout
 import EmptyState from '../../../components/folders/EmptyState'
-import DocumentList from '../../../components/folders/DocumentList'
-import AddFab from '../../../components/folders/AddFab'
 import NameModal from '../../../components/folders/NameModal'
 import ReadModal from '../../../components/folders/ReadModal'
 import { generateThumbnail } from '../../../lib/utils/thumbnails'
@@ -27,6 +26,12 @@ export default function FolderPage() {
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [activeDocId, setActiveDocId] = useState<string | null>(null)
+  const [activeSrc, setActiveSrc] = useState<string | null>(null)
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(340)
+  const minSidebar = 240
+  const maxSidebar = 640
 
   const {
     folderName,
@@ -105,6 +110,15 @@ export default function FolderPage() {
     setDeletingId(docId)
     try {
       await deleteDocument(docId)
+      if (docId === activeDocId) {
+        const remaining = documents.filter((d) => d.id !== docId)
+        if (remaining.length) {
+          handleSelectDoc(remaining[0].id)
+        } else {
+          setActiveDocId(null)
+          setActiveSrc(null)
+        }
+      }
     } catch (err: any) {
       const message = err?.message || 'Delete failed. Please try again.'
       setDeleteError(message)
@@ -136,11 +150,37 @@ export default function FolderPage() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 relative">
-      <FolderHeader title={folderName} />
+  const buildDocSrc = (docId: string, title: string, docType: string) => {
+    const safeTitle = encodeURIComponent(title || 'Untitled')
+    if (docType === 'pdf') {
+      return `/folders/${encodeURIComponent(folderId)}/reader?docId=${encodeURIComponent(
+        docId
+      )}&fileName=${safeTitle}&hideHeader=1`
+    }
+    return `/folders/${encodeURIComponent(folderId)}/writer?docId=${encodeURIComponent(
+      docId
+    )}&name=${safeTitle}&hideHeader=1`
+  }
 
-      <div className="px-6 pb-6">
+  const handleSelectDoc = (docId: string) => {
+    const doc = documents.find((d) => d.id === docId)
+    if (!doc) return
+    setActiveDocId(docId)
+    setActiveSrc(buildDocSrc(doc.id, doc.title || '', doc.doc_type || 'file'))
+  }
+
+  useEffect(() => {
+    if (documents.length && !activeDocId) {
+      handleSelectDoc(documents[0].id)
+    } else if (!documents.length) {
+      setActiveDocId(null)
+      setActiveSrc(null)
+    }
+  }, [documents, activeDocId])
+
+  return (
+    <div className="min-h-screen bg-slate-50 relative flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         {uploadError && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {uploadError}
@@ -160,21 +200,147 @@ export default function FolderPage() {
         {documents.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="flex-1">
-            <DocumentList
-              folderId={folderId}
-              documents={documents}
-              isLoading={isLoadingDocs}
-              onDelete={handleDeleteDocument}
-              deletingId={deletingId}
-              onRename={handleRenameDocument}
-              renamingId={renamingId}
-              onSelectForRename={(docId, currentName) => {
-                setRenameTargetId(docId)
-                setRenameValue(currentName)
-                setRenameModalOpen(true)
+          <div className="flex-1 min-h-0 flex gap-0 select-none">
+            {/* Sidebar list */}
+            <div
+              className="border-r border-slate-200 bg-white overflow-hidden flex flex-col"
+              style={{ width: sidebarWidth, minWidth: minSidebar, maxWidth: maxSidebar }}
+            >
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between relative">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/')}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition flex-shrink-0"
+                    aria-label="Back to home"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{folderName || 'Folder'}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {isLoadingDocs && <p className="text-xs text-slate-400">Loading…</p>}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddMenuOpen((prev) => !prev)}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition"
+                      title="Add file"
+                    >
+                      +
+                    </button>
+                    {isAddMenuOpen && (
+                      <div className="absolute right-0 mt-2 w-40 rounded-lg border border-slate-200 bg-white shadow-lg z-20">
+                        <button
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            setIsAddMenuOpen(false)
+                            setFileName('')
+                            setIsNameModalOpen(true)
+                          }}
+                        >
+                          Start writing
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            setIsAddMenuOpen(false)
+                            setFileName('')
+                            setIsReadModalOpen(true)
+                          }}
+                        >
+                          Upload PDF
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {documents.map((doc) => {
+                  const isActive = doc.id === activeDocId
+                  return (
+                    <div
+                      key={doc.id}
+                      className={`px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 ${
+                        isActive ? 'bg-indigo-50/70 border-l-4 border-indigo-500' : ''
+                      }`}
+                      onClick={() => handleSelectDoc(doc.id)}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{doc.title || 'Untitled'}</p>
+                        <p className="text-[11px] text-slate-500">{doc.doc_type || 'file'}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="text-xs text-slate-500 hover:text-indigo-600"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRenameTargetId(doc.id)
+                            setRenameValue(doc.title || '')
+                            setRenameModalOpen(true)
+                          }}
+                          disabled={renamingId === doc.id}
+                        >
+                          {renamingId === doc.id ? 'Renaming…' : 'Rename'}
+                        </button>
+                        <button
+                          className="text-xs text-rose-600 hover:text-rose-700"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const confirmed = window.confirm('Delete this file?')
+                            if (confirmed) handleDeleteDocument(doc.id)
+                          }}
+                          disabled={deletingId === doc.id}
+                        >
+                          {deletingId === doc.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Divider for resize */}
+            <div
+              className="w-1.5 cursor-col-resize bg-transparent hover:bg-slate-200 active:bg-slate-300"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                const startX = e.clientX
+                const startWidth = sidebarWidth
+                const onMove = (ev: MouseEvent) => {
+                  const delta = ev.clientX - startX
+                  const next = Math.min(Math.max(startWidth + delta, minSidebar), maxSidebar)
+                  setSidebarWidth(next)
+                }
+                const onUp = () => {
+                  window.removeEventListener('mousemove', onMove)
+                  window.removeEventListener('mouseup', onUp)
+                }
+                window.addEventListener('mousemove', onMove)
+                window.addEventListener('mouseup', onUp)
               }}
             />
+
+            {/* Viewer pane */}
+            <div className="flex-1 bg-white overflow-hidden min-h-[500px]">
+              {activeSrc ? (
+                <iframe
+                  key={activeSrc}
+                  src={activeSrc}
+                  className="w-full h-full min-h-[500px]"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                  title="Document viewer"
+                />
+              ) : (
+                <div className="w-full h-full min-h-[500px] flex items-center justify-center text-slate-500">
+                  Select a file to view
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -202,18 +368,6 @@ export default function FolderPage() {
           />
         )}
       </div>
-
-      <AddFab
-        disabled={!isMetaReady}
-        onSelectWrite={() => {
-          setFileName('')
-          setIsNameModalOpen(true)
-        }}
-        onSelectRead={() => {
-          setFileName('')
-          setIsReadModalOpen(true)
-        }}
-      />
 
       <RenameModal
         fileName={renameValue}

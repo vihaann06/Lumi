@@ -24,6 +24,7 @@ export default function ExplanationPanel({
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
   // Get chat history from selected highlight (only for explanations)
   const chatHistory = selectedHighlight?.chatHistory || [];
@@ -32,10 +33,22 @@ export default function ExplanationPanel({
 
   // Scroll to bottom when chat history updates
   useEffect(() => {
+    if (!shouldAutoScroll) return;
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [chatHistory, isChatLoading]);
+  }, [chatHistory, isChatLoading, shouldAutoScroll]);
+
+  useEffect(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      setShouldAutoScroll(nearBottom);
+    };
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleSendMessage = (e) => {
     e.preventDefault();

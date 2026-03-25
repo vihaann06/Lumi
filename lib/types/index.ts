@@ -1,6 +1,6 @@
 /**
  * Shared TypeScript types for Lumi
- *
+ * 
  * Types are organized by domain and re-exported here for convenience.
  */
 

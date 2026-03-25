@@ -73,6 +73,8 @@ export default function ReaderScreen() {
     return addHighlight(selectedText, selectedRange, currentPageInView, aiType, aiContent);
   });
 
+  const hideHeader = (searchParams.get('hideHeader') || '').toLowerCase() === '1' || (searchParams.get('hideHeader') || '').toLowerCase() === 'true';
+
   // Local state for text selection
   const [selectedText, setSelectedText] = useState('');
   const [selectedRange, setSelectedRange] = useState(null);
@@ -81,6 +83,10 @@ export default function ReaderScreen() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isDeletingHighlight, setIsDeletingHighlight] = useState(false);
   const [fileName, setFileName] = useState('Lumi');
+  const [rightPanelWidth, setRightPanelWidth] = useState(360);
+  const minRight = 260;
+  const maxRight = 640;
+  const [zoom, setZoom] = useState(1);
   const workspaceId = docMeta?.workspaceId;
   const folderId = docMeta?.folderId || folderIdParam;
   const accountId = authUser?.id;
@@ -100,17 +106,7 @@ export default function ReaderScreen() {
   }, [supabase]);
 
   // Load persisted annotations + threads
-  useEffect(() => {
-    const loadAnnotations = async () => {
-      if (!supabase || !docId) return;
-      const { data: annotations, error } = await supabase
-        .from('annotations')
-        .select('id, page, quote, anchor_json, has_thread')
-        .eq('doc_id', docId);
-      if (error) {
-        console.error('Failed to load annotations', error);
-        return;
-      }
+ 
 
       const annotationIds = annotations?.map((a) => a.id) || [];
       let threads = [];
@@ -596,44 +592,73 @@ export default function ReaderScreen() {
     return null;
   }
 
+  const effectivePageWidth = pageWidth ? pageWidth * zoom : undefined;
+
   return (
-    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-8 py-4 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden relative">
+      {/* Header (hidden when embedded) */}
+      {!hideHeader && (
+        <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-8 py-4 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/')}
+              className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20"
+              aria-label="Go to home"
+            >
+              <Sparkles className="w-6 h-6 text-white" />
+            </button>
+            <div className="leading-tight">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 font-semibold">
+                Lumi
+              </p>
+              <h1 className="text-lg font-semibold text-slate-900">{fileName || 'Lumi'}</h1>
+            </div>
+          </div>
+
+          {numPages && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500 font-light">
+                {currentPageInView} <span className="text-slate-300">/</span> {numPages}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Zoom controls (always visible) */}
+      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white/90 backdrop-blur-sm px-2 py-1 shadow-sm">
           <button
             type="button"
-            onClick={() => router.push('/')}
-            className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20"
-            aria-label="Go to home"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100"
+            onClick={() => setZoom((z) => Math.max(0.5, parseFloat((z - 0.1).toFixed(2))))}
+            aria-label="Zoom out"
           >
-            <Sparkles className="w-6 h-6 text-white" />
+            −
           </button>
-          <div className="leading-tight">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 font-semibold">
-              Lumi
-            </p>
-            <h1 className="text-lg font-semibold text-slate-900">{fileName || 'Lumi'}</h1>
-          </div>
+          <span className="text-xs font-medium text-slate-700 w-12 text-center">
+            {(zoom * 100).toFixed(0)}%
+          </span>
+          <button
+            type="button"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100"
+            onClick={() => setZoom((z) => Math.min(2.5, parseFloat((z + 0.1).toFixed(2))))}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
         </div>
-
-        {numPages && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-500 font-light">
-              {currentPageInView} <span className="text-slate-300">/</span> {numPages}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-1 overflow-hidden min-h-0 select-none">
         {/* PDF Viewer - Scrollable */}
         <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-100/50" onMouseUp={handleTextSelection}>
           <PDFViewer
             pdfFile={pdfFile}
             numPages={numPages}
-            pageWidth={pageWidth}
+            pageWidth={effectivePageWidth}
             onDocumentLoadSuccess={onDocumentLoadSuccess}
             highlights={highlights}
             selectedHighlightId={selectedHighlightId}
@@ -656,21 +681,52 @@ export default function ReaderScreen() {
           />
         </div>
 
-        {/* Explanation Panel */}
-        <ExplanationPanel
-          isCollapsed={isPanelCollapsed}
-          onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
-          selectedText={selectedText}
-          selectedHighlight={selectedHighlight}
-          isLoading={isLoading}
-          explanation={explanation}
-          summary={summary}
-          referenceCheck={referenceCheck}
-          onSendChatMessage={handleSendChatMessage}
-        isChatLoading={isChatLoading}
-        onDeleteHighlight={handleDeleteHighlight}
-        isDeletingHighlight={isDeletingHighlight}
+        {/* Divider for resizing */}
+        <div
+          className="w-1.5 cursor-col-resize bg-transparent hover:bg-slate-200 active:bg-slate-300"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startWidth = rightPanelWidth;
+            const onMove = (ev) => {
+              const delta = ev.clientX - startX;
+              const next = Math.min(Math.max(startWidth - delta, minRight), maxRight);
+              setRightPanelWidth(next);
+            };
+            const onUp = () => {
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          }}
         />
+
+        {/* Explanation Panel */}
+        <div
+          className="bg-white/80 backdrop-blur-sm border-l border-slate-200/60 flex flex-col transition-all duration-200 overflow-hidden"
+          style={{
+            width: isPanelCollapsed ? 52 : rightPanelWidth,
+            minWidth: isPanelCollapsed ? 52 : minRight,
+            maxWidth: isPanelCollapsed ? 52 : maxRight,
+            flexShrink: 0
+          }}
+        >
+          <ExplanationPanel
+            isCollapsed={isPanelCollapsed}
+            onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
+            selectedText={selectedText}
+            selectedHighlight={selectedHighlight}
+            isLoading={isLoading}
+            explanation={explanation}
+            summary={summary}
+            referenceCheck={referenceCheck}
+            onSendChatMessage={handleSendChatMessage}
+            isChatLoading={isChatLoading}
+            onDeleteHighlight={handleDeleteHighlight}
+            isDeletingHighlight={isDeletingHighlight}
+          />
+        </div>
       </div>
     </div>
   );
