@@ -72,17 +72,6 @@ export default function FoldersList({
             </p>
           </div>
           <div className="relative">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onRenameFolder?.(folder)
-              }}
-              className="hidden group-hover:inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-white"
-              title="Rename or delete"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
             <div className="flex items-center gap-2 ml-2">
               <button
                 type="button"

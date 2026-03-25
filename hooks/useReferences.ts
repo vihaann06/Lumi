@@ -26,6 +26,13 @@ export function useReferences(folderId: string | null) {
     refresh()
   }, [refresh])
 
+  // Re-fetch when window regains focus (e.g. after interacting with an iframe)
+  useEffect(() => {
+    const onFocus = () => { refresh() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh])
+
   const addReference = useCallback(
     async (accountId: string, input: ReferenceInsert): Promise<Reference | null> => {
       if (!supabase) return null
