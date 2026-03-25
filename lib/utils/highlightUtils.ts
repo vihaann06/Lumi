@@ -2,10 +2,12 @@
  * Highlight-related utility functions
  */
 
+type Rect = { x: number; y: number; width: number; height: number }
+
 /**
  * Check if two rectangles overlap or are very close (within threshold)
  */
-const doRectsOverlap = (rect1, rect2, threshold = 2) => {
+const doRectsOverlap = (rect1: Rect, rect2: Rect, threshold = 2) => {
   // Check for actual overlap
   const overlaps = !(
     rect1.x + rect1.width < rect2.x ||
@@ -44,7 +46,7 @@ const doRectsOverlap = (rect1, rect2, threshold = 2) => {
 /**
  * Merge two overlapping rectangles into a single bounding rectangle
  */
-const mergeTwoRects = (rect1, rect2) => {
+const mergeTwoRects = (rect1: Rect, rect2: Rect) => {
   const minX = Math.min(rect1.x, rect2.x);
   const minY = Math.min(rect1.y, rect2.y);
   const maxX = Math.max(rect1.x + rect1.width, rect2.x + rect2.width);
@@ -63,7 +65,7 @@ const mergeTwoRects = (rect1, rect2) => {
  * @param {Array} rects - Array of rectangle objects with x, y, width, height
  * @returns {Array} - Array of merged rectangles
  */
-export const mergeOverlappingRects = (rects) => {
+export const mergeOverlappingRects = (rects: Rect[]) => {
   if (rects.length <= 1) return rects;
   
   let merged = rects.map(r => ({ ...r })); // Deep copy
@@ -107,7 +109,7 @@ export const mergeOverlappingRects = (rects) => {
 /**
  * Merge adjacent or overlapping rectangles
  */
-const mergeRects = (rects) => {
+const mergeRects = (rects: Rect[]) => {
   if (rects.length <= 1) return rects;
   
   // Sort by y position, then by x
@@ -146,14 +148,14 @@ const mergeRects = (rects) => {
 /**
  * Filter out very small rectangles (likely noise)
  */
-const filterSmallRects = (rects, minArea = 10) => {
+const filterSmallRects = (rects: Rect[], minArea = 10) => {
   return rects.filter(rect => (rect.width * rect.height) >= minArea);
 };
 
 /**
  * Calculate highlight rectangles relative to page
  */
-export const calculateHighlightRects = (clientRects, pageRect) => {
+export const calculateHighlightRects = (clientRects: DOMRectList, pageRect: DOMRect) => {
   const rects = Array.from(clientRects).map(rect => ({
     x: rect.left - pageRect.left,
     y: rect.top - pageRect.top,
@@ -175,7 +177,7 @@ export const calculateHighlightRects = (clientRects, pageRect) => {
 /**
  * Find which page a selection belongs to
  */
-export const findPageForSelection = (clientRects, pages, currentPageInView) => {
+export const findPageForSelection = (clientRects: DOMRectList, pages: HTMLElement[] | null, currentPageInView: number) => {
   if (!pages || clientRects.length === 0) {
     return { pageElement: null, pageNum: currentPageInView };
   }
@@ -188,7 +190,7 @@ export const findPageForSelection = (clientRects, pages, currentPageInView) => {
     if (selectionCenterY >= pageRect.top && selectionCenterY <= pageRect.bottom) {
       return {
         pageElement: page,
-        pageNum: parseInt(page.dataset.pageNumber)
+        pageNum: parseInt(page.dataset.pageNumber || '0')
       };
     }
   }
@@ -199,7 +201,7 @@ export const findPageForSelection = (clientRects, pages, currentPageInView) => {
 /**
  * Create a new highlight object
  */
-export const createHighlight = (text, highlightRects, aiType = null, aiContent = null) => {
+export const createHighlight = (text: string, highlightRects: Rect[], aiType: string | null = null, aiContent: string | null = null) => {
   const highlightId = Date.now();
   
   // Initialize chat history with the initial AI response only for explanations (not summaries)
@@ -227,7 +229,7 @@ export const createHighlight = (text, highlightRects, aiType = null, aiContent =
  * @param {string} text - The text to truncate
  * @returns {string} - Truncated text with ellipsis if needed
  */
-export const truncateTextForDisplay = (text) => {
+export const truncateTextForDisplay = (text: string) => {
   if (!text) return '';
   
   const words = text.trim().split(/\s+/);

@@ -5,7 +5,7 @@
 /**
  * Get PDF file URL from route state or sessionStorage
  */
-export const getFileUrl = (location) => {
+export const getFileUrl = (location: { state?: { fileUrl?: string } }) => {
   if (location.state?.fileUrl) {
     return location.state.fileUrl;
   }

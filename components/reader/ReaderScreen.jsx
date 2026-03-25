@@ -10,6 +10,7 @@ import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { usePDFViewer } from '@/hooks/usePDFViewer';
 import { useHighlights } from '@/hooks/useHighlights';
 import { useAIActions } from '@/hooks/useAIActions';
+import { useReferences } from '@/hooks/useReferences';
 
 // Services
 import { chatWithAI } from '@/lib/services/ai/actions';
@@ -20,7 +21,7 @@ import PDFViewer from '../../components/reader/PDFViewer';
 import SelectionMenu from '../../components/reader/SelectionMenu';
 import ExplanationPanel from '../../components/reader/ExplanationPanel';
 import PageHighlights from '../../components/reader/PageHighlights';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, BookmarkCheck, X } from 'lucide-react';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -105,8 +106,26 @@ export default function ReaderScreen() {
     };
   }, [supabase]);
 
+  // References hook
+  const {
+    references,
+    addReference,
+    removeReference,
+  } = useReferences(folderId);
+  const [refSavedFlash, setRefSavedFlash] = useState(false);
+  const [refTrayOpen, setRefTrayOpen] = useState(false);
+
   // Load persisted annotations + threads
- 
+  useEffect(() => {
+    const loadAnnotations = async () => {
+      if (!supabase || !docId) return;
+
+      const { data: annotations, error } = await supabase
+        .from('annotations')
+        .select('*')
+        .eq('doc_id', docId);
+
+      if (error || !annotations) return;
 
       const annotationIds = annotations?.map((a) => a.id) || [];
       let threads = [];
@@ -572,6 +591,24 @@ export default function ReaderScreen() {
     setSelectedRange(null);
   };
 
+  // Save reference from selected text
+  const handleSaveReference = async () => {
+    if (!selectedText || !docId || !folderId || !accountId) return;
+    const ref = await addReference(accountId, {
+      folderId,
+      sourceDocId: docId,
+      sourceDocTitle: fileName || null,
+      pageNumber: currentPageInView || null,
+      selectedText,
+    });
+    if (ref) {
+      setRefSavedFlash(true);
+      setTimeout(() => setRefSavedFlash(false), 2000);
+    }
+    setMenuPosition(null);
+    window.getSelection().removeAllRanges();
+  };
+
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -587,6 +624,15 @@ export default function ReaderScreen() {
   // Get selected highlight for display
   const selectedHighlight = getSelectedHighlight();
   const currentPageHighlights = highlights[currentPageInView] || [];
+
+  // Only show the right panel when there's AI content or a highlight is selected
+  const showRightPanel = !!(
+    isLoading ||
+    explanation ||
+    summary ||
+    referenceCheck ||
+    selectedHighlight
+  );
 
   if (!pdfFile) {
     return null;
@@ -626,6 +672,14 @@ export default function ReaderScreen() {
         </div>
       )}
 
+      {/* Reference saved flash */}
+      {refSavedFlash && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium px-4 py-2 rounded-lg shadow-md animate-fade-in">
+          <BookmarkCheck className="w-4 h-4" />
+          Reference saved
+        </div>
+      )}
+
       {/* Zoom controls (always visible) */}
       <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white/90 backdrop-blur-sm px-2 py-1 shadow-sm">
@@ -654,7 +708,7 @@ export default function ReaderScreen() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden min-h-0 select-none">
         {/* PDF Viewer - Scrollable */}
-        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-100/50" onMouseUp={handleTextSelection}>
+        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-100/50 select-text" onMouseUp={handleTextSelection}>
           <PDFViewer
             pdfFile={pdfFile}
             numPages={numPages}
@@ -672,6 +726,7 @@ export default function ReaderScreen() {
             onAIExplain={handleAIExplainClick}
             onAISummary={handleAISummaryClick}
             onHighlight={handleHighlight}
+            onSaveReference={handleSaveReference}
           />
 
           {/* Page Highlights */}
@@ -681,52 +736,108 @@ export default function ReaderScreen() {
           />
         </div>
 
-        {/* Divider for resizing */}
-        <div
-          className="w-1.5 cursor-col-resize bg-transparent hover:bg-slate-200 active:bg-slate-300"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            const startX = e.clientX;
-            const startWidth = rightPanelWidth;
-            const onMove = (ev) => {
-              const delta = ev.clientX - startX;
-              const next = Math.min(Math.max(startWidth - delta, minRight), maxRight);
-              setRightPanelWidth(next);
-            };
-            const onUp = () => {
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-            };
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          }}
-        />
+        {/* Divider + Explanation Panel — only when AI content is active */}
+        {showRightPanel && (
+          <>
+            <div
+              className="w-1.5 cursor-col-resize bg-transparent hover:bg-slate-200 active:bg-slate-300 flex-shrink-0"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startWidth = rightPanelWidth;
+                const onMove = (ev) => {
+                  const delta = ev.clientX - startX;
+                  const next = Math.min(Math.max(startWidth - delta, minRight), maxRight);
+                  setRightPanelWidth(next);
+                };
+                const onUp = () => {
+                  window.removeEventListener('mousemove', onMove);
+                  window.removeEventListener('mouseup', onUp);
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+              }}
+            />
+            <div
+              className="bg-white border-l border-slate-200/60 flex flex-col overflow-hidden flex-shrink-0"
+              style={{ width: rightPanelWidth }}
+            >
+              <ExplanationPanel
+                isCollapsed={false}
+                onToggleCollapse={() => {}}
+                selectedText={selectedText}
+                selectedHighlight={selectedHighlight}
+                isLoading={isLoading}
+                explanation={explanation}
+                summary={summary}
+                referenceCheck={referenceCheck}
+                onSendChatMessage={handleSendChatMessage}
+                isChatLoading={isChatLoading}
+                onDeleteHighlight={handleDeleteHighlight}
+                isDeletingHighlight={isDeletingHighlight}
+              />
+            </div>
+          </>
+        )}
+      </div>
 
-        {/* Explanation Panel */}
-        <div
-          className="bg-white/80 backdrop-blur-sm border-l border-slate-200/60 flex flex-col transition-all duration-200 overflow-hidden"
-          style={{
-            width: isPanelCollapsed ? 52 : rightPanelWidth,
-            minWidth: isPanelCollapsed ? 52 : minRight,
-            maxWidth: isPanelCollapsed ? 52 : maxRight,
-            flexShrink: 0
-          }}
+      {/* Reference bubble - bottom left */}
+      <div className="absolute bottom-5 left-5 z-40">
+        {refTrayOpen && (
+          <div className="absolute bottom-14 left-0 w-80 max-h-96 bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="px-3 py-2.5 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">References</span>
+              <span className="text-xs text-slate-400">{references.length} collected</span>
+            </div>
+            {references.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-slate-400">
+                Select text and click &ldquo;Reference&rdquo; to collect evidence.
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {references.map((ref, idx) => (
+                  <div key={ref.id} className="group px-3 py-2.5 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs min-w-0">
+                        <span className="font-semibold text-indigo-500 flex-shrink-0">R{idx + 1}</span>
+                        <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
+                        {ref.pageNumber && <span className="text-slate-400 flex-shrink-0">p.{ref.pageNumber}</span>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeReference(ref.id)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition-opacity flex-shrink-0"
+                        title="Remove"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500 leading-relaxed line-clamp-2">
+                      &ldquo;{ref.selectedText}&rdquo;
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setRefTrayOpen((v) => !v)}
+          className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-colors ${
+            refTrayOpen
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200'
+          }`}
+          title="References"
         >
-          <ExplanationPanel
-            isCollapsed={isPanelCollapsed}
-            onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
-            selectedText={selectedText}
-            selectedHighlight={selectedHighlight}
-            isLoading={isLoading}
-            explanation={explanation}
-            summary={summary}
-            referenceCheck={referenceCheck}
-            onSendChatMessage={handleSendChatMessage}
-            isChatLoading={isChatLoading}
-            onDeleteHighlight={handleDeleteHighlight}
-            isDeletingHighlight={isDeletingHighlight}
-          />
-        </div>
+          <BookmarkCheck className="w-5 h-5" />
+          {references.length > 0 && !refTrayOpen && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">
+              {references.length}
+            </span>
+          )}
+        </button>
       </div>
     </div>
   );

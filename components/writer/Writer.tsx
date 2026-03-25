@@ -18,7 +18,7 @@ export default function Writer({ fileName, content, onChangeContent }: WriterPro
   const fontSizes = ['8', '9', '10', '11', '12', '14', '18', '24', '30', '36']
 
   return (
-    <div className="h-screen flex flex-col bg-[#f9fbfd]">
+    <div className="h-full flex flex-col bg-[#f9fbfd]">
       {/* Top Bar */}
       <div className="bg-[#f9fbfd] border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between mb-2">

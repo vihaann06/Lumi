@@ -1,14 +1,15 @@
 import React from 'react';
-import { Lightbulb, FileText, Highlighter } from 'lucide-react';
+import { Lightbulb, FileText, Highlighter, BookmarkPlus } from 'lucide-react';
 
 /**
  * Selection Menu Component
  */
-export default function SelectionMenu({ 
-  menuPosition, 
-  onAIExplain, 
-  onAISummary, 
-  onHighlight 
+export default function SelectionMenu({
+  menuPosition,
+  onAIExplain,
+  onAISummary,
+  onHighlight,
+  onSaveReference
 }) {
   if (!menuPosition) return null;
 
@@ -44,6 +45,13 @@ export default function SelectionMenu({
         >
           <Highlighter className="w-4 h-4" />
           Highlight
+        </button>
+        <button
+          onClick={onSaveReference}
+          className="px-3 py-2 text-sm font-medium text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/50 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 whitespace-nowrap"
+        >
+          <BookmarkPlus className="w-4 h-4" />
+          Reference
         </button>
       </div>
     </div>

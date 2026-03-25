@@ -8,7 +8,7 @@ const API_URL = 'https://api.openai.com/v1/chat/completions';
 /**
  * Make a request to OpenAI API
  */
-const makeOpenAIRequest = async (prompt, model = 'gpt-4o-mini') => {
+const makeOpenAIRequest = async (prompt: string, model = 'gpt-4o-mini') => {
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
@@ -43,7 +43,7 @@ const makeOpenAIRequest = async (prompt, model = 'gpt-4o-mini') => {
 /**
  * Get AI explanation for selected text
  */
-export const getAIExplanation = async (selectedText) => {
+export const getAIExplanation = async (selectedText: string) => {
   const prompt = `Please explain the following text in a clear and accessible way:\n\n"${selectedText}"`;
   return makeOpenAIRequest(prompt);
 };
@@ -51,7 +51,7 @@ export const getAIExplanation = async (selectedText) => {
 /**
  * Get AI summary for selected text
  */
-export const getAISummary = async (selectedText) => {
+export const getAISummary = async (selectedText: string) => {
   const prompt = `Please provide a concise summary of the following text:\n\n"${selectedText}"`;
   return makeOpenAIRequest(prompt);
 };
@@ -59,7 +59,7 @@ export const getAISummary = async (selectedText) => {
 /**
  * Get reference check for selected text
  */
-export const getReferenceCheck = async (selectedText) => {
+export const getReferenceCheck = async (selectedText: string) => {
   const prompt = `Please check if the following text contains any factual claims, statistics, or references that should be verified. If so, identify what needs to be checked and suggest how to verify it:\n\n"${selectedText}"`;
   return makeOpenAIRequest(prompt);
 };
@@ -71,7 +71,7 @@ export const getReferenceCheck = async (selectedText) => {
  * @param {string} userMessage - The current user message
  * @returns {Promise<string>} - The AI's response
  */
-export const chatWithAI = async (selectedText, chatHistory, userMessage) => {
+export const chatWithAI = async (selectedText: string, chatHistory: { role: string; content: string }[], userMessage: string) => {
   // Build the conversation messages
   const messages = [
     {

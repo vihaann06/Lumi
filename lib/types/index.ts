@@ -10,5 +10,6 @@ export * from './highlights';
 export * from './vector';
 export * from './ai';
 export * from './writing';
+export * from './references';
 export * from './api';
 

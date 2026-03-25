@@ -60,22 +60,20 @@ export default function ExplanationPanel({
 
   if (isCollapsed) {
     return (
-      <div className="bg-white/80 backdrop-blur-sm border-l border-slate-200/60 overflow-y-auto flex flex-col transition-all duration-300 w-12">
-        <div className="flex flex-col items-center py-4">
-          <button
-            onClick={onToggleCollapse}
-            className="p-2 hover:bg-slate-100/50 rounded-lg transition-colors"
-            title="Expand panel"
-          >
-            <ChevronLeft className="w-4 h-4 text-slate-400" />
-          </button>
-        </div>
+      <div className="h-full flex flex-col items-center py-4">
+        <button
+          onClick={onToggleCollapse}
+          className="p-2 hover:bg-slate-100/50 rounded-lg transition-colors"
+          title="Expand panel"
+        >
+          <ChevronLeft className="w-4 h-4 text-slate-400" />
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm border-l border-slate-200/60 flex flex-col transition-all duration-300 w-96 shadow-lg">
+    <div className="h-full flex flex-col">
       <div className="sticky top-0 bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-5 py-4 flex items-center justify-between z-10">
         <h2 className="text-sm font-medium text-slate-700 flex items-center gap-2">
           <Lightbulb className="w-4 h-4 text-indigo-500" />
