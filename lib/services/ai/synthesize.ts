@@ -5,6 +5,11 @@ export interface SynthesisMessage {
   content: string
 }
 
+export interface EditProposal {
+  summary: string
+  proposedContent: string
+}
+
 export interface ReferenceContext {
   id: string
   sourceDocTitle: string | null
@@ -41,4 +46,33 @@ export async function synthesizeChat(
 
   const data = await res.json()
   return data.content
+}
+
+export async function synthesizeEditProposal(
+  instruction: string,
+  references: ReferenceContext[],
+  documentContent: string
+): Promise<EditProposal> {
+  const res = await fetch('/api/ai/synthesize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mode: 'edit',
+      instruction,
+      references,
+      documentContent,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Edit request failed')
+  }
+
+  const data = await res.json()
+  if (!data?.proposal?.proposedContent) {
+    throw new Error('No edit proposal returned')
+  }
+
+  return data.proposal as EditProposal
 }

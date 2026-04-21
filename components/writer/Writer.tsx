@@ -2,20 +2,260 @@
 
 import React, { useState } from 'react'
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, Link, Image, Minus, Plus, ChevronDown, Printer, Undo, Redo, PaintBucket, Type, Highlighter, MoreVertical } from 'lucide-react'
+import type { EditProposal } from '@/lib/services/ai/synthesize'
 
 type WriterProps = {
   fileName: string
   content: string
   onChangeContent: (val: string) => void
+  pendingEditProposal: EditProposal | null
+  onApprovePendingEdit: () => void
+  onRejectPendingEdit: () => void
 }
 
-export default function Writer({ fileName, content, onChangeContent }: WriterProps) {
+type LineOp = {
+  type: 'unchanged' | 'added' | 'removed'
+  line: string
+}
+
+type TokenDiff = {
+  oldChanged: boolean[]
+  newChanged: boolean[]
+  oldTokens: string[]
+  newTokens: string[]
+}
+
+type TokenOp = {
+  type: 'unchanged' | 'added' | 'removed'
+  token: string
+}
+
+const splitLines = (text: string) => text.split('\n')
+
+const buildLcsTable = (a: string[], b: string[]) => {
+  const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0))
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+    }
+  }
+  return dp
+}
+
+const getLineDiffOps = (oldText: string, newText: string): LineOp[] => {
+  const oldLines = splitLines(oldText)
+  const newLines = splitLines(newText)
+  const dp = buildLcsTable(oldLines, newLines)
+  const ops: LineOp[] = []
+
+  let i = oldLines.length
+  let j = newLines.length
+  while (i > 0 && j > 0) {
+    if (oldLines[i - 1] === newLines[j - 1]) {
+      ops.push({ type: 'unchanged', line: oldLines[i - 1] })
+      i--
+      j--
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      ops.push({ type: 'removed', line: oldLines[i - 1] })
+      i--
+    } else {
+      ops.push({ type: 'added', line: newLines[j - 1] })
+      j--
+    }
+  }
+  while (i > 0) {
+    ops.push({ type: 'removed', line: oldLines[i - 1] })
+    i--
+  }
+  while (j > 0) {
+    ops.push({ type: 'added', line: newLines[j - 1] })
+    j--
+  }
+
+  return ops.reverse()
+}
+
+const splitWordTokens = (line: string) => line.match(/\S+|\s+/g) || []
+
+const getWordDiff = (oldLine: string, newLine: string): TokenDiff => {
+  const oldTokens = splitWordTokens(oldLine)
+  const newTokens = splitWordTokens(newLine)
+  const dp = buildLcsTable(oldTokens, newTokens)
+
+  const oldChanged = Array(oldTokens.length).fill(false)
+  const newChanged = Array(newTokens.length).fill(false)
+
+  let i = oldTokens.length
+  let j = newTokens.length
+  while (i > 0 && j > 0) {
+    if (oldTokens[i - 1] === newTokens[j - 1]) {
+      i--
+      j--
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      oldChanged[i - 1] = true
+      i--
+    } else {
+      newChanged[j - 1] = true
+      j--
+    }
+  }
+  while (i > 0) {
+    oldChanged[i - 1] = true
+    i--
+  }
+  while (j > 0) {
+    newChanged[j - 1] = true
+    j--
+  }
+
+  return { oldChanged, newChanged, oldTokens, newTokens }
+}
+
+const getWordOps = (oldLine: string, newLine: string): TokenOp[] => {
+  const oldTokens = splitWordTokens(oldLine)
+  const newTokens = splitWordTokens(newLine)
+  const dp = buildLcsTable(oldTokens, newTokens)
+  const ops: TokenOp[] = []
+
+  let i = oldTokens.length
+  let j = newTokens.length
+
+  while (i > 0 && j > 0) {
+    if (oldTokens[i - 1] === newTokens[j - 1]) {
+      ops.push({ type: 'unchanged', token: oldTokens[i - 1] })
+      i--
+      j--
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      ops.push({ type: 'removed', token: oldTokens[i - 1] })
+      i--
+    } else {
+      ops.push({ type: 'added', token: newTokens[j - 1] })
+      j--
+    }
+  }
+
+  while (i > 0) {
+    ops.push({ type: 'removed', token: oldTokens[i - 1] })
+    i--
+  }
+  while (j > 0) {
+    ops.push({ type: 'added', token: newTokens[j - 1] })
+    j--
+  }
+
+  return ops.reverse()
+}
+
+export default function Writer({
+  fileName,
+  content,
+  onChangeContent,
+  pendingEditProposal,
+  onApprovePendingEdit,
+  onRejectPendingEdit
+}: WriterProps) {
   const [zoom, setZoom] = useState(100)
   const [font, setFont] = useState('Arial')
   const [fontSize, setFontSize] = useState('11')
 
   const fonts = ['Arial', 'Calibri', 'Comic Sans MS', 'Courier New', 'Georgia', 'Times New Roman', 'Trebuchet MS', 'Verdana']
   const fontSizes = ['8', '9', '10', '11', '12', '14', '18', '24', '30', '36']
+  const lineOps = pendingEditProposal ? getLineDiffOps(content || '', pendingEditProposal.proposedContent || '') : []
+
+  const renderInlineWordOps = (ops: TokenOp[]) => (
+    <span className="whitespace-pre-wrap">
+      {ops.map((op, idx) => {
+        const isWhitespace = op.token.trim().length === 0
+        if (isWhitespace || op.type === 'unchanged') {
+          return <span key={idx}>{op.token}</span>
+        }
+
+        if (op.type === 'removed') {
+          return (
+            <span key={idx} className="bg-rose-200 text-rose-900 rounded-sm line-through">
+              {op.token}
+            </span>
+          )
+        }
+
+        return (
+          <span key={idx} className="bg-emerald-200 text-emerald-900 rounded-sm">
+            {op.token}
+          </span>
+        )
+      })}
+    </span>
+  )
+
+  const renderedDiffLines: React.ReactNode[] = []
+  for (let idx = 0; idx < lineOps.length; idx++) {
+    const op = lineOps[idx]
+    const next = lineOps[idx + 1]
+    const isPair = op.type === 'removed' && next?.type === 'added'
+
+    if (isPair) {
+      const wordOps = getWordOps(op.line, next.line)
+      renderedDiffLines.push(
+        <div key={`pair-${idx}`} className="text-sm leading-relaxed">
+          <div className="inline-block min-w-4 text-amber-500 mr-2 align-top">~</div>
+          <div className="inline">{renderInlineWordOps(wordOps)}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5 ml-6">Inline edit</div>
+        </div>
+      )
+      idx++
+      continue
+    }
+
+    if (op.type === 'added') {
+      const next = lineOps[idx + 1]
+      const prev = lineOps[idx - 1]
+      const isLikelyRewriteNeighbor = prev?.type === 'removed' || next?.type === 'removed'
+      if (isLikelyRewriteNeighbor) {
+        const neighbor = prev?.type === 'removed' ? prev : next
+        if (neighbor) {
+          const wordOps = getWordOps(neighbor.line, op.line)
+          renderedDiffLines.push(
+            <div key={`rewrite-${idx}`} className="text-sm leading-relaxed">
+              <div className="inline-block min-w-4 text-amber-500 mr-2 align-top">~</div>
+              <div className="inline">{renderInlineWordOps(wordOps)}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5 ml-6">Inline edit</div>
+            </div>
+          )
+          continue
+        }
+      }
+      renderedDiffLines.push(
+        <div key={`add-${idx}`} className="text-sm leading-relaxed">
+          <span className="text-emerald-500 mr-2">+</span>
+          <span className="bg-emerald-100 text-emerald-900 rounded-sm">{op.line}</span>
+        </div>
+      )
+      continue
+    }
+
+    if (op.type === 'removed') {
+      const prev = lineOps[idx - 1]
+      const next = lineOps[idx + 1]
+      const hasLikelyRewriteNeighbor = prev?.type === 'added' || next?.type === 'added'
+      if (hasLikelyRewriteNeighbor) {
+        continue
+      }
+      renderedDiffLines.push(
+        <div key={`rem-${idx}`} className="text-sm leading-relaxed">
+          <span className="text-rose-500 mr-2">−</span>
+          <span className="bg-rose-100 text-rose-900 rounded-sm">{op.line}</span>
+        </div>
+      )
+      continue
+    }
+
+    renderedDiffLines.push(
+      <div key={`same-${idx}`} className="text-sm text-gray-900 leading-relaxed whitespace-pre-wrap">
+        {op.line}
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col bg-[#f9fbfd]">
@@ -177,17 +417,50 @@ export default function Writer({ fileName, content, onChangeContent }: WriterPro
           transform: `scale(${zoom / 100})`,
           transformOrigin: 'top center'
         }}>
-          <textarea
-            value={content}
-            onChange={(e) => onChangeContent(e.target.value)}
-            placeholder="Start typing..."
-            className="w-full min-h-[1056px] resize-none outline-none text-gray-900 leading-relaxed"
-            style={{
-              fontFamily: font,
-              fontSize: `${fontSize}pt`,
-              lineHeight: '1.5'
-            }}
-          />
+          {pendingEditProposal ? (
+            <div className="min-h-[1056px]">
+              <div className="sticky top-0 z-10 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+                    Pending AI edits
+                  </p>
+                  <p className="text-xs text-amber-800">{pendingEditProposal.summary}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onApprovePendingEdit}
+                    className="text-xs px-2.5 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRejectPendingEdit}
+                    className="text-xs px-2.5 py-1 rounded-md border border-slate-300 text-slate-600 hover:bg-white"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                {renderedDiffLines}
+              </div>
+            </div>
+          ) : (
+            <textarea
+              value={content}
+              onChange={(e) => onChangeContent(e.target.value)}
+              placeholder="Start typing..."
+              className="w-full min-h-[1056px] resize-none outline-none text-gray-900 leading-relaxed"
+              style={{
+                fontFamily: font,
+                fontSize: `${fontSize}pt`,
+                lineHeight: '1.5'
+              }}
+            />
+          )}
         </div>
       </div>
     </div>

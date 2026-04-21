@@ -8,6 +8,7 @@ import WritingAIPanel from '../../../../components/writer/WritingAIPanel'
 import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useFileReferences } from '@/hooks/useFileReferences'
 import type { Reference } from '@/lib/types/references'
+import type { EditProposal } from '@/lib/services/ai/synthesize'
 
 export default function FolderWritePage() {
   return (
@@ -31,6 +32,7 @@ function FolderWriteContent() {
 
   const [fileName, setFileName] = useState(initialName)
   const [content, setContent] = useState('')
+  const [pendingEditProposal, setPendingEditProposal] = useState<EditProposal | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [panelWidth, setPanelWidth] = useState(360)
   const minPanel = 280
@@ -165,6 +167,20 @@ function FolderWriteContent() {
     setExtraRefs((prev) => prev.filter((r) => r.id !== id))
   }
 
+  const handleProposeEdit = (proposal: EditProposal) => {
+    setPendingEditProposal(proposal)
+  }
+
+  const handleApproveEdit = () => {
+    if (!pendingEditProposal?.proposedContent) return
+    setContent(pendingEditProposal.proposedContent)
+    setPendingEditProposal(null)
+  }
+
+  const handleRejectEdit = () => {
+    setPendingEditProposal(null)
+  }
+
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'reference:add-to-chat' && event.data.reference) {
@@ -201,7 +217,14 @@ function FolderWriteContent() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Writer area */}
         <div className="flex-1 min-w-0 overflow-hidden">
-          <Writer fileName={fileName || 'Untitled'} content={content} onChangeContent={setContent} />
+          <Writer
+            fileName={fileName || 'Untitled'}
+            content={content}
+            onChangeContent={setContent}
+            pendingEditProposal={pendingEditProposal}
+            onApprovePendingEdit={handleApproveEdit}
+            onRejectPendingEdit={handleRejectEdit}
+          />
         </div>
 
         {/* Resizable divider */}
@@ -245,6 +268,8 @@ function FolderWriteContent() {
             activeRefs={activeRefs}
             onRemoveActiveRef={handleRemoveActiveRef}
             documentContent={content}
+            onProposeEdit={handleProposeEdit}
+            hasPendingEdit={Boolean(pendingEditProposal)}
             isCollapsed={panelCollapsed}
             onToggleCollapse={() => setPanelCollapsed(!panelCollapsed)}
           />

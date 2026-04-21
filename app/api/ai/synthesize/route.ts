@@ -9,6 +9,20 @@ interface ReferenceContext {
   refLabel: string
 }
 
+function parseJsonObject(raw: string) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (!match) return null
+    try {
+      return JSON.parse(match[0])
+    } catch {
+      return null
+    }
+  }
+}
+
 function buildSystemPrompt(references: ReferenceContext[]): string {
   const refBlock = references
     .map(
@@ -38,10 +52,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const {
+      mode,
+      instruction,
       messages,
       references,
       documentContent,
     }: {
+      mode?: 'ask' | 'edit'
+      instruction?: string
       messages: { role: string; content: string }[]
       references: ReferenceContext[]
       documentContent?: string
@@ -56,8 +74,62 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildSystemPrompt(references || [])
     const docContext = documentContent
-      ? `\n\nThe user's current document draft:\n\n${documentContent.slice(0, 3000)}`
+      ? `\n\nThe user's current document draft:\n\n${documentContent.slice(0, mode === 'edit' ? 20000 : 3000)}`
       : ''
+
+    if (mode === 'edit') {
+      if (!instruction?.trim()) {
+        return NextResponse.json(
+          { error: 'Edit instruction is required' },
+          { status: 400 }
+        )
+      }
+
+      const editPrompt = `You are in EDIT mode. Propose concrete document edits for the user.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "summary": "1-2 sentence summary of what changed and why",
+  "proposedContent": "full revised document text"
+}
+
+Rules:
+- Always return the FULL revised document as proposedContent.
+- Preserve the user's style unless instruction says otherwise.
+- Use references when relevant and do not invent facts.
+- Keep improvements targeted to the instruction.
+
+User instruction:
+${instruction}`
+
+      const content = await requestClaude({
+        system: `${systemPrompt}${docContext}`,
+        messages: [{ role: 'user', content: editPrompt }],
+        maxTokens: 3500,
+        temperature: 0.4,
+      })
+
+      const parsed = parseJsonObject(content)
+      const proposal = {
+        summary:
+          typeof parsed?.summary === 'string' && parsed.summary.trim()
+            ? parsed.summary.trim()
+            : 'Proposed edits are ready for review.',
+        proposedContent:
+          typeof parsed?.proposedContent === 'string' && parsed.proposedContent.trim()
+            ? parsed.proposedContent
+            : '',
+      }
+
+      if (!proposal.proposedContent) {
+        return NextResponse.json(
+          { error: 'Failed to parse proposed edits from model output' },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ proposal })
+    }
 
     const content = await requestClaude({
       system: `${systemPrompt}${docContext}`,
