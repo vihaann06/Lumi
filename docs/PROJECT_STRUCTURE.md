@@ -13,9 +13,8 @@ lumi/
 ├── app/                          # Next.js App Router
 │   ├── api/                      # API routes
 │   │   └── ai/                   # AI service endpoints
-│   │       ├── explain/          # POST /api/ai/explain
-│   │       ├── summary/          # POST /api/ai/summary
-│   │       └── chat/             # POST /api/ai/chat
+│   │       ├── chat/             # POST /api/ai/chat
+│   │       └── synthesize/       # POST /api/ai/synthesize
 │   ├── (reader)/                 # Route group for reader pages
 │   │   └── reader/              # PDF reader page
 │   ├── components/               # React components
@@ -31,9 +30,10 @@ lumi/
 │   └── page.tsx                  # Home page (upload)
 │
 ├── hooks/                        # React hooks (shared)
-│   ├── useAIActions.js
 │   ├── useHighlights.js
-│   └── usePDFViewer.js
+│   ├── usePDFViewer.js
+│   ├── useReferences.ts
+│   └── useFileReferences.ts
 │
 ├── lib/                          # Shared library code
 │   ├── types/                    # TypeScript type definitions
@@ -44,9 +44,9 @@ lumi/
 │   │   └── index.ts
 │   └── services/                 # Service layer
 │       ├── ai/                   # AI services
-│       │   └── openaiService.ts  # OpenAI integration
-│       ├── document/             # Document processing (future)
-│       └── vector/               # Vector services (future)
+│       │   ├── openaiService.ts  # Client AI API wrapper
+│       │   ├── claudeServer.ts   # Server Claude provider
+│       │   └── synthesize.ts     # Writer synthesis client
 │
 ├── server/                       # Server-side code
 │   ├── api/                      # API route handlers (future)
@@ -102,8 +102,8 @@ Database layer (future):
 ### ✅ Implemented
 - PDF upload and viewing
 - Text selection and highlighting
-- AI explanations (with chat)
-- AI summaries
+- AI chat in reader
+- AI ask/edit in writer
 - Modern, minimalistic UI
 
 ### 🚧 In Progress

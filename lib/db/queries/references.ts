@@ -4,6 +4,7 @@ import type { Reference, ReferenceInsert } from '@/lib/types/references'
 function rowToReference(row: any): Reference {
   return {
     id: row.id,
+    referenceNumber: Number(row.reference_number || 0),
     accountId: row.account_id,
     folderId: row.folder_id,
     sourceDocId: row.source_doc_id,
@@ -13,6 +14,7 @@ function rowToReference(row: any): Reference {
     selectedText: row.selected_text,
     anchorJson: row.anchor_json ?? {},
     createdAt: row.created_at,
+    deletedAt: row.deleted_at ?? null,
   }
 }
 
@@ -24,7 +26,8 @@ export async function listFolderReferences(
     .from('references')
     .select('*')
     .eq('folder_id', folderId)
-    .order('created_at', { ascending: true })
+    .is('deleted_at', null)
+    .order('reference_number', { ascending: true })
 
   if (error) {
     console.error('Failed to list references', error)
@@ -66,7 +69,7 @@ export async function deleteReference(
 ): Promise<boolean> {
   const { error } = await supabase
     .from('references')
-    .delete()
+    .update({ deleted_at: new Date().toISOString() })
     .eq('id', referenceId)
 
   if (error) {
@@ -74,4 +77,22 @@ export async function deleteReference(
     return false
   }
   return true
+}
+
+export async function getReferenceById(
+  supabase: SupabaseClient,
+  referenceId: string
+): Promise<Reference | null> {
+  const { data, error } = await supabase
+    .from('references')
+    .select('*')
+    .eq('id', referenceId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Failed to fetch reference by id', error)
+    return null
+  }
+  if (!data) return null
+  return rowToReference(data)
 }

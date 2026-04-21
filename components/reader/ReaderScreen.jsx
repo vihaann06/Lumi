@@ -13,7 +13,7 @@ import { useReferences } from '@/hooks/useReferences';
 import { useFileReferences } from '@/hooks/useFileReferences';
 
 // Services
-import { chatWithAI } from '@/lib/services/ai/actions';
+import { chatWithAI } from '@/lib/services/ai/openaiService';
 import { getSupabaseClient } from '@/lib/db/supabaseClient';
 import { listSynthesisUsageForReferenceIds } from '@/lib/db/queries/synthesisReferenceLinks';
 
@@ -1011,7 +1011,7 @@ export default function ReaderScreen() {
                       <p className="text-[10px] text-slate-400">Drag to a file to attach</p>
                     </div>
                     <div className="px-3 pb-3 space-y-2 overflow-y-auto flex-1">
-                      {fileRefs.map((ref, idx) => (
+                      {fileRefs.map((ref) => (
                         <div
                           key={ref.id}
                           className="group flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
@@ -1024,7 +1024,7 @@ export default function ReaderScreen() {
                           <BookmarkCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 text-xs">
-                              <span className="font-semibold text-indigo-500">R{idx + 1}</span>
+                              <span className="font-semibold text-indigo-500">R{ref.referenceNumber}</span>
                               <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
                               {ref.pageNumber && <span className="text-slate-400">p.{ref.pageNumber}</span>}
                             </div>

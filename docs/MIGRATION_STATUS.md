@@ -12,7 +12,6 @@
 - ✅ `SelectionMenu.jsx` → `app/components/reader/SelectionMenu.jsx`
 
 ### Hooks
-- ✅ `useAIActions.js` → `hooks/useAIActions.js` (imports updated)
 - ✅ `useHighlights.js` → `hooks/useHighlights.js` (imports updated)
 - ✅ `usePDFViewer.js` → `hooks/usePDFViewer.js` (imports updated)
 

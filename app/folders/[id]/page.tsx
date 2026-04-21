@@ -12,6 +12,7 @@ import { generateThumbnail } from '../../../lib/utils/thumbnails'
 import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useReferences } from '@/hooks/useReferences'
 import { attachReferenceToFile } from '@/lib/db/queries/fileReferences'
+import { getReferenceById } from '@/lib/db/queries/references'
 import { getCurrentUserId } from '@/lib/db/queries/auth'
 import ReferenceTray from '../../../components/references/ReferenceTray'
 
@@ -144,7 +145,17 @@ export default function FolderPage() {
         if (ref) {
           handleGoToReference(ref)
         } else {
-          refreshReferences()
+          if (supabase) {
+            void getReferenceById(supabase, targetId).then((found) => {
+              if (found) {
+                handleGoToReference(found)
+                return
+              }
+              refreshReferences()
+            })
+          } else {
+            refreshReferences()
+          }
         }
         return
       }
@@ -175,7 +186,7 @@ export default function FolderPage() {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [refreshReferences, references, activeDocId, postMessageToIframe])
+  }, [refreshReferences, references, activeDocId, postMessageToIframe, supabase])
 
   // --- File operations ---
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {

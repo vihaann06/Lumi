@@ -4,6 +4,7 @@ import type { Reference } from '@/lib/types/references'
 function rowToReference(row: any): Reference {
   return {
     id: row.id,
+    referenceNumber: Number(row.reference_number || 0),
     accountId: row.account_id,
     folderId: row.folder_id,
     sourceDocId: row.source_doc_id,
@@ -13,6 +14,7 @@ function rowToReference(row: any): Reference {
     selectedText: row.selected_text,
     anchorJson: row.anchor_json ?? {},
     createdAt: row.created_at,
+    deletedAt: row.deleted_at ?? null,
   }
 }
 
@@ -39,7 +41,7 @@ export async function listFileReferences(
     .from('references')
     .select('*')
     .in('id', refIds)
-    .order('created_at', { ascending: true })
+    .order('reference_number', { ascending: true })
 
   if (refError) {
     console.error('Failed to fetch references', refError)

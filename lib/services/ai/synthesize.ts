@@ -32,7 +32,7 @@ export function refsToContext(refs: Reference[], indexOffset = 0): ReferenceCont
     sourceDocTitle: r.sourceDocTitle,
     pageNumber: r.pageNumber,
     selectedText: r.selectedText,
-    refLabel: `R${i + 1 + indexOffset}`,
+    refLabel: `R${r.referenceNumber || i + 1 + indexOffset}`,
   }))
 }
 

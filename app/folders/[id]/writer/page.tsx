@@ -58,10 +58,6 @@ function FolderWriteContent() {
     workspaceId: string | null
     accountId: string | null
   }>({ workspaceId: null, accountId: null })
-  const [writerStorageMeta, setWriterStorageMeta] = useState<{
-    bucket: string | null
-    path: string | null
-  }>({ bucket: null, path: null })
   const retryTimerRef = useRef<number | null>(null)
   const cloudSaveBlockedRef = useRef(false)
   const warnedCloudSaveBlockedRef = useRef(false)
@@ -203,10 +199,6 @@ function FolderWriteContent() {
           workspaceId: (docRow as any).workspace_id ?? null,
           accountId: (docRow as any).account_id ?? null,
         })
-        setWriterStorageMeta({
-          bucket: (docRow as any).file_bucket ?? null,
-          path: (docRow as any).file_path ?? null,
-        })
       }
 
       let didLoadContent = false
@@ -341,7 +333,6 @@ function FolderWriteContent() {
     if (
       !supabase ||
       !docId ||
-      !accountId ||
       !writerDocMeta.workspaceId ||
       !writerDocMeta.accountId
     ) return false
@@ -380,7 +371,6 @@ function FolderWriteContent() {
   }, [
     supabase,
     docId,
-    accountId,
     writerDocMeta.workspaceId,
     writerDocMeta.accountId,
   ])

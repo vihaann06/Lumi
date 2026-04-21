@@ -186,7 +186,7 @@ export default function WritingAIPanel({
             Using {activeRefs.length} reference{activeRefs.length !== 1 ? 's' : ''}
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {activeRefs.map((ref, idx) => (
+            {activeRefs.map((ref) => (
               <div
                 key={ref.id}
                 className="flex items-center gap-1.5 text-xs bg-white rounded-md border border-slate-200 pl-2 pr-1 py-1 cursor-grab active:cursor-grabbing"
@@ -196,7 +196,7 @@ export default function WritingAIPanel({
                   e.dataTransfer.effectAllowed = 'copy'
                 }}
               >
-                <span className="text-indigo-500 font-semibold">R{idx + 1}</span>
+                <span className="text-indigo-500 font-semibold">R{ref.referenceNumber}</span>
                 <span className="text-slate-500 max-w-[100px] truncate">
                   {truncate(ref.selectedText, 30)}
                 </span>

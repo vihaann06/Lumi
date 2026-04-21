@@ -52,6 +52,8 @@ type InlineCitationPosition = {
   referenceId: string
   top: number
   left: number
+  width: number
+  height: number
 }
 
 const splitLines = (text: string) => text.split('\n')
@@ -278,7 +280,9 @@ export default function Writer({
           refLabel: occurrence.refLabel,
           referenceId: occurrence.referenceId,
           top: markerEl.offsetTop - scrollTop,
-          left: markerEl.offsetLeft + markerEl.offsetWidth + 6 - scrollLeft,
+          left: markerEl.offsetLeft - scrollLeft,
+          width: markerEl.offsetWidth,
+          height: markerEl.offsetHeight,
         }
       })
       .filter((item): item is InlineCitationPosition => Boolean(item))
@@ -637,21 +641,27 @@ export default function Writer({
                       const ref = referenceById.get(chip.referenceId)
                       const mention = mentionByReferenceId.get(chip.referenceId)
                       const isFocused = focusedReferenceId === chip.referenceId
+                      const markerLabel = `[${chip.refLabel}]`
                       return (
                         <button
                           key={chip.key}
                           type="button"
-                          className={`group pointer-events-auto absolute flex max-w-[22px] items-center overflow-hidden rounded-full border px-2 py-1 text-[10px] font-semibold transition-all duration-200 hover:max-w-[210px] hover:shadow-sm ${
+                          className={`group pointer-events-auto absolute z-10 inline-flex items-center justify-center rounded-sm border text-[10px] font-semibold leading-none transition-all duration-200 hover:shadow-sm ${
                             isFocused
                               ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
                               : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300'
                           }`}
-                          style={{ top: chip.top, left: chip.left }}
+                          style={{
+                            top: chip.top,
+                            left: chip.left,
+                            width: chip.width,
+                            height: chip.height,
+                          }}
                           onClick={() => onGoToSourceReference(chip.referenceId)}
                           title="Go to referenced source highlight"
                         >
-                          <span className="whitespace-nowrap">{chip.refLabel}</span>
-                          <span className="ml-1.5 hidden whitespace-nowrap text-[10px] font-medium text-slate-600 group-hover:inline">
+                          <span className="whitespace-nowrap">{markerLabel}</span>
+                          <span className="pointer-events-none absolute left-full top-1/2 ml-1 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-medium text-slate-600 shadow-sm group-hover:inline-flex">
                             {(ref?.sourceDocTitle || 'Source')}{ref?.pageNumber ? ` p.${ref.pageNumber}` : ''} • x{mention?.citationCount || 1}
                           </span>
                         </button>

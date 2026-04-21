@@ -1,5 +1,6 @@
 export interface Reference {
   id: string;
+  referenceNumber: number;
   accountId: string;
   folderId: string;
   sourceDocId: string;
@@ -9,6 +10,7 @@ export interface Reference {
   selectedText: string;
   anchorJson: Record<string, unknown>;
   createdAt: string;
+  deletedAt: string | null;
 }
 
 export interface FileReference {

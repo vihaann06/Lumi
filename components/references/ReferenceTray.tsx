@@ -66,7 +66,7 @@ export default function ReferenceTray({
             {!isLoading && references.length === 0 && (
               <div className="px-3 py-3 text-slate-400 text-sm">No references yet</div>
             )}
-            {references.map((ref, idx) => (
+            {references.map((ref) => (
               <div
                 key={ref.id}
                 data-reference-id={ref.id}
@@ -85,7 +85,7 @@ export default function ReferenceTray({
                   <div className={`mt-0.5 text-[11px] font-semibold ${
                     ref.id === selectedReferenceId ? 'text-emerald-600' : 'text-indigo-500'
                   }`}>
-                    R{idx + 1}
+                    R{ref.referenceNumber}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-slate-800 truncate">
