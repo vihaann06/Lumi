@@ -7,6 +7,7 @@ import Writer from '../../../../components/writer/Writer'
 import WritingAIPanel from '../../../../components/writer/WritingAIPanel'
 import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useFileReferences } from '@/hooks/useFileReferences'
+import { getDocumentContent, upsertDocumentContent } from '@/lib/db/queries/documentContents'
 import type { Reference } from '@/lib/types/references'
 import type { EditProposal } from '@/lib/services/ai/synthesize'
 import {
@@ -14,6 +15,9 @@ import {
   syncSynthesisReferenceMentions,
   type SynthesisReferenceMention,
 } from '@/lib/db/queries/synthesisReferenceLinks'
+
+const inMemoryWriterDrafts = new Map<string, { content: string; updatedAt: number }>()
+let hasWarnedLocalDraftStorage = false
 
 export default function FolderWritePage() {
   return (
@@ -59,19 +63,134 @@ function FolderWriteContent() {
     path: string | null
   }>({ bucket: null, path: null })
   const retryTimerRef = useRef<number | null>(null)
+  const cloudSaveBlockedRef = useRef(false)
+  const warnedCloudSaveBlockedRef = useRef(false)
+  const activeLoadDocIdRef = useRef<string>('')
+  const LOCAL_DRAFT_PREFIX = 'lumi:writer-draft:'
 
   // File-scoped references: only refs attached to this specific document
   const { references: fileRefs, detach: detachRef, attach: attachRef } = useFileReferences(docId || null)
+
+  const getLocalDraftKey = useCallback(
+    (targetDocId: string) => `${LOCAL_DRAFT_PREFIX}${targetDocId}`,
+    []
+  )
+
+  const readLocalDraft = useCallback((targetDocId: string): string | null => {
+    const memoryDraft = inMemoryWriterDrafts.get(targetDocId)
+    let storageDraft: { content: string; updatedAt: number } | null = null
+    const parseDraft = (raw: string | null): { content: string; updatedAt: number } | null => {
+      if (!raw) return null
+      try {
+        const parsed = JSON.parse(raw)
+        if (typeof parsed?.content === 'string') {
+          return {
+            content: parsed.content,
+            updatedAt: Number(parsed?.updatedAt || 0) || 0,
+          }
+        }
+      } catch {
+        if (typeof raw === 'string') {
+          return { content: raw, updatedAt: 0 }
+        }
+      }
+      return null
+    }
+
+    const candidates: Array<{ content: string; updatedAt: number }> = []
+    if (memoryDraft) candidates.push(memoryDraft)
+    try {
+      const raw = window.localStorage.getItem(getLocalDraftKey(targetDocId))
+      const parsed = parseDraft(raw)
+      if (parsed) candidates.push(parsed)
+    } catch {
+      if (!hasWarnedLocalDraftStorage) {
+        hasWarnedLocalDraftStorage = true
+        console.warn('localStorage unavailable in writer iframe; using in-memory draft fallback.')
+      }
+    }
+
+    try {
+      const parentWin = window.parent
+      if (parentWin && parentWin !== window) {
+        const parentLocal = parentWin.localStorage.getItem(getLocalDraftKey(targetDocId))
+        const parsedParentLocal = parseDraft(parentLocal)
+        if (parsedParentLocal) candidates.push(parsedParentLocal)
+      }
+    } catch {
+      // parent window may be inaccessible in some sandbox contexts
+    }
+
+    storageDraft = candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null
+    return storageDraft?.content ?? null
+  }, [getLocalDraftKey])
+
+  const writeLocalDraft = useCallback((targetDocId: string, snapshot: string) => {
+    const payload = { content: snapshot, updatedAt: Date.now() }
+    inMemoryWriterDrafts.set(targetDocId, payload)
+    const serialized = JSON.stringify(payload)
+    try {
+      window.localStorage.setItem(getLocalDraftKey(targetDocId), serialized)
+    } catch {
+      if (!hasWarnedLocalDraftStorage) {
+        hasWarnedLocalDraftStorage = true
+        console.warn('Unable to persist writer draft to localStorage; using in-memory draft fallback.')
+      }
+    }
+    try {
+      const parentWin = window.parent
+      if (parentWin && parentWin !== window) {
+        parentWin.localStorage.setItem(getLocalDraftKey(targetDocId), serialized)
+      }
+    } catch {
+      // parent window may be inaccessible in some sandbox contexts
+    }
+  }, [getLocalDraftKey])
+
+  // Initialize per-doc editor state with local draft first (if available).
+  useEffect(() => {
+    if (!docId) return
+    activeLoadDocIdRef.current = docId
+    setPendingEditProposal(null)
+    setFocusedReferenceId(null)
+    setCitationMentions([])
+    setContent('')
+    hasLocalEditsRef.current = false
+    cloudSaveBlockedRef.current = false
+    warnedCloudSaveBlockedRef.current = false
+    queuedContentRef.current = null
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+
+    const localDraft = readLocalDraft(docId)
+    if (typeof localDraft === 'string' && localDraft.trim().length > 0) {
+      setContent(localDraft)
+      hasLocalEditsRef.current = true
+    }
+  }, [docId, readLocalDraft])
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
+      }
+    }
+  }, [])
 
   // Load existing content
   useEffect(() => {
     const load = async () => {
       if (!supabase || !docId) return
+      const loadDocId = docId
       const { data: docRow, error: docError } = await supabase
         .from('documents')
         .select('title, workspace_id, account_id, file_bucket, file_path')
         .eq('id', docId)
         .maybeSingle()
+      if (activeLoadDocIdRef.current !== loadDocId) return
       if (docError) {
         console.error('Failed loading writer doc row', docError)
       }
@@ -91,12 +210,22 @@ function FolderWriteContent() {
       }
 
       let didLoadContent = false
+      const rowContent = await getDocumentContent(supabase, loadDocId)
+      if (activeLoadDocIdRef.current !== loadDocId) return
+      if (typeof rowContent === 'string' && !hasLocalEditsRef.current) {
+        setContent(rowContent)
+        writeLocalDraft(loadDocId, rowContent)
+        didLoadContent = true
+      }
+      if (didLoadContent) return
+
       const writerBucket = (docRow as any)?.file_bucket
       const writerPath = (docRow as any)?.file_path
       if (writerBucket && writerPath) {
         const { data: writerBlob, error: writerDownloadError } = await supabase.storage
           .from(writerBucket)
           .download(writerPath)
+        if (activeLoadDocIdRef.current !== loadDocId) return
 
         if (writerDownloadError) {
           // New writer docs can legitimately have no blob yet.
@@ -112,7 +241,18 @@ function FolderWriteContent() {
             }
             if (typeof parsedContent === 'string' && !hasLocalEditsRef.current) {
               setContent(parsedContent)
+              writeLocalDraft(loadDocId, parsedContent)
               didLoadContent = true
+              const workspaceId = (docRow as any)?.workspace_id
+              const ownerAccountId = (docRow as any)?.account_id
+              if (workspaceId && ownerAccountId) {
+                void upsertDocumentContent(supabase, {
+                  docId: loadDocId,
+                  workspaceId,
+                  accountId: ownerAccountId,
+                  content: parsedContent,
+                })
+              }
             }
           } catch (parseError) {
             console.error('Failed parsing writer content blob', parseError)
@@ -128,6 +268,7 @@ function FolderWriteContent() {
         .eq('doc_id', docId)
         .eq('kind', 'metadata_json')
         .maybeSingle()
+      if (activeLoadDocIdRef.current !== loadDocId) return
       if (assetError) {
         console.error('Failed loading writer metadata asset row', assetError)
       }
@@ -136,6 +277,7 @@ function FolderWriteContent() {
         const { data: fileBlob, error: downloadError } = await supabase.storage
           .from(assetRow.bucket)
           .download(assetRow.path)
+        if (activeLoadDocIdRef.current !== loadDocId) return
 
         if (downloadError) {
           console.error('Failed loading writer content blob', downloadError)
@@ -145,6 +287,17 @@ function FolderWriteContent() {
             const parsed = JSON.parse(raw)
             if (typeof parsed?.content === 'string' && !hasLocalEditsRef.current) {
               setContent(parsed.content)
+              writeLocalDraft(loadDocId, parsed.content)
+              const workspaceId = (docRow as any)?.workspace_id
+              const ownerAccountId = (docRow as any)?.account_id
+              if (workspaceId && ownerAccountId) {
+                void upsertDocumentContent(supabase, {
+                  docId: loadDocId,
+                  workspaceId,
+                  accountId: ownerAccountId,
+                  content: parsed.content,
+                })
+              }
             }
           } catch (parseError) {
             console.error('Failed parsing writer content blob', parseError)
@@ -190,22 +343,28 @@ function FolderWriteContent() {
       !docId ||
       !accountId ||
       !writerDocMeta.workspaceId ||
-      !writerDocMeta.accountId ||
-      !writerStorageMeta.bucket ||
-      !writerStorageMeta.path
+      !writerDocMeta.accountId
     ) return false
+    if (cloudSaveBlockedRef.current) return true
 
-    const payload = new Blob([snapshot], { type: 'text/plain;charset=utf-8' })
-
-    const { error: uploadError } = await supabase.storage
-      .from(writerStorageMeta.bucket)
-      .upload(writerStorageMeta.path, payload, {
-        upsert: true,
-        contentType: 'text/plain',
-        cacheControl: '3600',
-      })
-    if (uploadError) {
-      console.error('Failed uploading writer content blob', uploadError)
+    const saveResult = await upsertDocumentContent(supabase, {
+      docId,
+      workspaceId: writerDocMeta.workspaceId,
+      accountId: writerDocMeta.accountId,
+      content: snapshot,
+    })
+    if (!saveResult.ok) {
+      if (saveResult.rlsDenied) {
+        cloudSaveBlockedRef.current = true
+        if (!warnedCloudSaveBlockedRef.current) {
+          warnedCloudSaveBlockedRef.current = true
+          console.warn(
+            'Cloud save blocked by Supabase RLS for this document_contents row. Keeping draft in local storage.'
+          )
+        }
+        return true
+      }
+      console.error('Failed saving writer content row')
       return false
     }
 
@@ -224,8 +383,6 @@ function FolderWriteContent() {
     accountId,
     writerDocMeta.workspaceId,
     writerDocMeta.accountId,
-    writerStorageMeta.bucket,
-    writerStorageMeta.path,
   ])
 
   const flushSaveQueue = useCallback(async () => {
@@ -261,11 +418,17 @@ function FolderWriteContent() {
   // Save content (debounced + serialized to avoid out-of-order overwrites)
   useEffect(() => {
     if (!hasLocalEditsRef.current) return
+    if (!docId) return
+    writeLocalDraft(docId, content)
+  }, [content, docId, writeLocalDraft])
+
+  useEffect(() => {
+    if (!hasLocalEditsRef.current) return
     const timer = setTimeout(() => {
       queueWriterSave(content)
     }, 600)
     return () => clearTimeout(timer)
-  }, [content, queueWriterSave])
+  }, [content, queueWriterSave, docId])
 
   // If doc metadata arrives after edits started, flush latest queued save.
   useEffect(() => {
@@ -274,8 +437,6 @@ function FolderWriteContent() {
   }, [
     writerDocMeta.workspaceId,
     writerDocMeta.accountId,
-    writerStorageMeta.bucket,
-    writerStorageMeta.path,
     accountId,
     queueWriterSave,
   ])
@@ -376,8 +537,11 @@ function FolderWriteContent() {
 
   const handleContentChange = useCallback((next: string) => {
     hasLocalEditsRef.current = true
+    if (docId) {
+      writeLocalDraft(docId, next)
+    }
     setContent(next)
-  }, [])
+  }, [docId, writeLocalDraft])
 
   const handleGoToSourceReference = useCallback((referenceId: string) => {
     if (!referenceId) return

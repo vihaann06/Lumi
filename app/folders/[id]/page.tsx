@@ -442,7 +442,6 @@ export default function FolderPage() {
                     }
                   }}
                   className="w-full h-full"
-                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
                   title="Document viewer"
                 />
               ) : (

@@ -1,5 +1,29 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+let hasWarnedMissingLinksTable = false
+
+function isMissingLinksTableError(error: any): boolean {
+  if (!error) return false
+  const code = String(error.code || '')
+  const status = Number(error.status || 0)
+  const message = String(error.message || '').toLowerCase()
+  return (
+    status === 404 ||
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('synthesis_reference_links') ||
+    message.includes('relation') && message.includes('does not exist')
+  )
+}
+
+function warnMissingLinksTableOnce() {
+  if (hasWarnedMissingLinksTable) return
+  hasWarnedMissingLinksTable = true
+  console.warn(
+    'synthesis_reference_links table is not available yet. Run migration 0007_synthesis_reference_links.sql to enable synthesis reference analytics.'
+  )
+}
+
 export type SynthesisReferenceMention = {
   referenceId: string
   refLabel: string
@@ -33,6 +57,10 @@ export async function listSynthesisReferenceMentionsForDocument(
     .eq('synthesis_doc_id', synthesisDocId)
 
   if (error) {
+    if (isMissingLinksTableError(error)) {
+      warnMissingLinksTableOnce()
+      return []
+    }
     console.error('Failed to load synthesis reference links', error)
     return []
   }
@@ -73,6 +101,10 @@ export async function syncSynthesisReferenceMentions(
       .delete()
       .eq('synthesis_doc_id', synthesisDocId)
     if (deleteAllError) {
+      if (isMissingLinksTableError(deleteAllError)) {
+        warnMissingLinksTableOnce()
+        return true
+      }
       console.error('Failed clearing synthesis reference links', deleteAllError)
       return false
     }
@@ -84,6 +116,10 @@ export async function syncSynthesisReferenceMentions(
     .select('reference_id')
     .eq('synthesis_doc_id', synthesisDocId)
   if (existingError) {
+    if (isMissingLinksTableError(existingError)) {
+      warnMissingLinksTableOnce()
+      return true
+    }
     console.error('Failed loading existing synthesis links', existingError)
     return false
   }
@@ -99,6 +135,10 @@ export async function syncSynthesisReferenceMentions(
       .eq('synthesis_doc_id', synthesisDocId)
       .in('reference_id', staleIds)
     if (deleteStaleError) {
+      if (isMissingLinksTableError(deleteStaleError)) {
+        warnMissingLinksTableOnce()
+        return true
+      }
       console.error('Failed deleting stale synthesis reference links', deleteStaleError)
       return false
     }
@@ -118,6 +158,10 @@ export async function syncSynthesisReferenceMentions(
     .from('synthesis_reference_links')
     .upsert(upsertRows, { onConflict: 'synthesis_doc_id,reference_id' })
   if (upsertError) {
+    if (isMissingLinksTableError(upsertError)) {
+      warnMissingLinksTableOnce()
+      return true
+    }
     console.error('Failed upserting synthesis reference links', upsertError)
     return false
   }
@@ -138,6 +182,10 @@ export async function listSynthesisUsageForReferenceIds(
     .in('reference_id', uniqueReferenceIds)
 
   if (error) {
+    if (isMissingLinksTableError(error)) {
+      warnMissingLinksTableOnce()
+      return {}
+    }
     console.error('Failed loading synthesis usage for references', error)
     return {}
   }
