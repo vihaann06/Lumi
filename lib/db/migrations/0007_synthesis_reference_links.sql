@@ -18,6 +18,7 @@ create index if not exists idx_srl_reference on public.synthesis_reference_links
 create index if not exists idx_srl_synthesis_doc on public.synthesis_reference_links(synthesis_doc_id);
 create index if not exists idx_srl_folder on public.synthesis_reference_links(folder_id);
 
+drop trigger if exists trg_synthesis_reference_links_updated_at on public.synthesis_reference_links;
 create trigger trg_synthesis_reference_links_updated_at
 before update on public.synthesis_reference_links
 for each row execute procedure public.set_updated_at();

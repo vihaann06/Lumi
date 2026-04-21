@@ -212,6 +212,14 @@ export default function Writer({
   const [scrollTop, setScrollTop] = useState(0)
   const [scrollLeft, setScrollLeft] = useState(0)
   const [inlineCitationPositions, setInlineCitationPositions] = useState<InlineCitationPosition[]>([])
+  const MIN_EDITOR_HEIGHT = 1056
+
+  useEffect(() => {
+    const textareaEl = textareaRef.current
+    if (!textareaEl || pendingEditProposal) return
+    textareaEl.style.height = 'auto'
+    textareaEl.style.height = `${Math.max(textareaEl.scrollHeight, MIN_EDITOR_HEIGHT)}px`
+  }, [content, font, fontSize, pendingEditProposal])
 
   const inlineCitationModel = useMemo(() => {
     if (!content || labelToReferenceId.size === 0) {
@@ -604,7 +612,7 @@ export default function Writer({
                 value={content}
                 onChange={(e) => onChangeContent(e.target.value)}
                 placeholder="Start typing..."
-                className="w-full min-h-[1056px] resize-none outline-none text-gray-900 leading-relaxed p-0"
+                className="w-full min-h-[1056px] resize-none overflow-hidden outline-none text-gray-900 leading-relaxed p-0"
                 style={{
                   fontFamily: font,
                   fontSize: `${fontSize}pt`,

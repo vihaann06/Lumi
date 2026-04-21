@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Loader2, MessageSquare, FileText, Search, ChevronRight, ChevronLeft, Send, Trash } from 'lucide-react';
+import { Loader2, MessageSquare, FileText, Search, ChevronRight, ChevronLeft, Send, Trash, Link2, ArrowUpRight, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { truncateTextForDisplay } from '@/lib/utils/highlightUtils';
@@ -21,7 +21,12 @@ export default function ExplanationPanel({
   onSendChatMessage,
   isChatLoading,
   onDeleteHighlight,
-  isDeletingHighlight
+  isDeletingHighlight,
+  referenceUsageEntries = [],
+  isReferenceUsageLoading = false,
+  onGoToSynthesisUsage,
+  activeChatRefs = [],
+  onRemoveActiveChatRef
 }) {
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef(null);
@@ -31,6 +36,7 @@ export default function ExplanationPanel({
 
   const chatHistory = selectedHighlight?.chatHistory || [];
   const isChatHighlight = selectedHighlight?.aiType === 'chat' || selectedHighlight?.aiType === 'explanation';
+  const isReferenceHighlight = selectedHighlight?.aiType === 'reference';
 
   const markdownComponents = {
     h1: ({ children }) => <h1 className="text-base font-semibold mt-2 mb-1">{children}</h1>,
@@ -102,6 +108,78 @@ export default function ExplanationPanel({
     );
   }
 
+  if (isReferenceHighlight) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="sticky top-0 bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-5 py-4 flex items-center justify-between z-10">
+          <h2 className="text-sm font-medium text-slate-700 flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-emerald-500" />
+            Reference links
+          </h2>
+          <button
+            onClick={onToggleCollapse}
+            className="p-1.5 hover:bg-slate-100/50 rounded-lg transition-colors"
+            title="Collapse panel"
+          >
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="space-y-3">
+            {isReferenceUsageLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading linked syntheses...
+              </div>
+            ) : referenceUsageEntries.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-600">
+                  This reference is not cited in any synthesis yet.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="text-xs text-slate-500">
+                  Used in {referenceUsageEntries.length}{' '}
+                  {referenceUsageEntries.length === 1 ? 'synthesis' : 'syntheses'}
+                </div>
+                <div className="space-y-2">
+                  {referenceUsageEntries.map((usage) => (
+                    <div
+                      key={usage.synthesisDocId}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-700 truncate">
+                            {usage.synthesisTitle || 'Untitled synthesis'}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Cited {usage.citationCount}x
+                            {usage.firstLine ? ` · line ${usage.firstLine}` : ''}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onGoToSynthesisUsage?.(usage)}
+                          className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-2 py-1 text-[11px] font-medium text-indigo-600 hover:bg-indigo-50"
+                        >
+                          Go to synthesis
+                          <ArrowUpRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col">
       <div className="sticky top-0 bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-5 py-4 flex items-center justify-between z-10">
@@ -134,42 +212,34 @@ export default function ExplanationPanel({
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {(selectedText || selectedHighlight) && (
-          <div className={`p-4 border-b border-slate-200/60 ${
-            isChatHighlight
-              ? 'bg-indigo-50/30'
-              : selectedHighlight?.aiType === 'summary'
-              ? 'bg-purple-50/30'
-              : selectedHighlight
-              ? 'bg-amber-50/30'
-              : 'bg-slate-50/50'
-          }`}>
-            <p className={`text-xs font-medium mb-2 uppercase tracking-wide ${
-              isChatHighlight
-                ? 'text-indigo-600'
-                : selectedHighlight?.aiType === 'summary'
-                ? 'text-purple-600'
-                : selectedHighlight
-                ? 'text-amber-600'
-                : 'text-slate-500'
-            }`}>
-              {selectedHighlight ? 'Selected Highlight' : 'Selected Text'}
-            </p>
-            <p className={`text-sm leading-relaxed ${
-              isChatHighlight
-                ? 'text-indigo-900'
-                : selectedHighlight?.aiType === 'summary'
-                ? 'text-purple-900'
-                : selectedHighlight
-                ? 'text-amber-900'
-                : 'text-slate-700'
-            }`}>
-              "{truncateTextForDisplay(selectedHighlight ? selectedHighlight.text : selectedText)}"
-            </p>
+      {activeChatRefs.length > 0 && (
+        <div className="px-3 py-2 border-b border-slate-200/60 bg-slate-50/50">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+            Using {activeChatRefs.length} reference{activeChatRefs.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {activeChatRefs.map((ref) => (
+              <div
+                key={ref.id}
+                className="flex items-center gap-1.5 text-xs bg-white rounded-md border border-slate-200 pl-2 pr-1 py-1"
+              >
+                <span className="text-indigo-500 font-semibold">R{ref.referenceNumber}</span>
+                <span className="text-slate-500 max-w-[100px] truncate">{ref.selectedText}</span>
+                <button
+                  type="button"
+                  onClick={() => onRemoveActiveChatRef?.(ref.id)}
+                  className="p-0.5 text-slate-400 hover:text-rose-500"
+                  title="Remove reference"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
+      <div className="flex-1 flex flex-col overflow-hidden">
         {isChatHighlight ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div

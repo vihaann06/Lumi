@@ -22,7 +22,7 @@ import PDFViewer from '../../components/reader/PDFViewer';
 import SelectionMenu from '../../components/reader/SelectionMenu';
 import ExplanationPanel from '../../components/reader/ExplanationPanel';
 import PageHighlights from '../../components/reader/PageHighlights';
-import { Sparkles, BookmarkCheck, X } from 'lucide-react';
+import { Sparkles, BookmarkCheck } from 'lucide-react';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -98,26 +98,105 @@ export default function ReaderScreen() {
   }, [supabase]);
 
   // References: folder-level creation + file-scoped attachment
-  const { addReference } = useReferences(folderId);
-  const { references: fileRefs, attach: attachToFile, detach: detachFromFile } = useFileReferences(docId);
+  const { addReference, references: folderReferences, isLoading: isReferencesLoading } = useReferences(folderId);
+  const { attach: attachToFile } = useFileReferences(docId);
+  const selectedHighlight = getSelectedHighlight();
+  const [activeChatRefs, setActiveChatRefs] = useState([]);
   const [refSavedFlash, setRefSavedFlash] = useState(false);
   const [pendingReferenceFocusId, setPendingReferenceFocusId] = useState(null);
-  const [synthesisUsageByRef, setSynthesisUsageByRef] = useState({});
+  const [selectedReferenceUsages, setSelectedReferenceUsages] = useState([]);
+  const [isLoadingSelectedReferenceUsages, setIsLoadingSelectedReferenceUsages] = useState(false);
 
   useEffect(() => {
-    const loadUsage = async () => {
-      if (!supabase || !fileRefs.length) {
-        setSynthesisUsageByRef({})
+    let cancelled = false
+    const loadSelectedReferenceUsages = async () => {
+      if (!supabase || !selectedHighlight || selectedHighlight.aiType !== 'reference' || !selectedHighlight.referenceId) {
+        setSelectedReferenceUsages([])
+        setIsLoadingSelectedReferenceUsages(false)
         return
       }
-      const usage = await listSynthesisUsageForReferenceIds(
-        supabase,
-        fileRefs.map((ref) => ref.id)
-      )
-      if (isMountedRef.current) setSynthesisUsageByRef(usage)
+
+      setIsLoadingSelectedReferenceUsages(true)
+      try {
+        const usage = await Promise.race([
+          listSynthesisUsageForReferenceIds(supabase, [selectedHighlight.referenceId]),
+          new Promise((resolve) => setTimeout(() => resolve({}), 6000)),
+        ])
+        const entries = usage?.[selectedHighlight.referenceId]?.syntheses || []
+        if (!cancelled && isMountedRef.current) setSelectedReferenceUsages(entries)
+      } catch {
+        if (!cancelled && isMountedRef.current) setSelectedReferenceUsages([])
+      } finally {
+        if (!cancelled && isMountedRef.current) setIsLoadingSelectedReferenceUsages(false)
+      }
     }
-    loadUsage()
-  }, [supabase, fileRefs])
+    loadSelectedReferenceUsages()
+    return () => {
+      cancelled = true
+    }
+  }, [supabase, selectedHighlight?.id, selectedHighlight?.aiType, selectedHighlight?.referenceId])
+
+  useEffect(() => {
+    if (isReferencesLoading) return
+
+    const activeReferenceIds = new Set((folderReferences || []).map((ref) => ref.id))
+    const staleReferenceHighlights = []
+
+    Object.entries(highlights || {}).forEach(([pageKey, pageHighlights]) => {
+      const pageNum = Number(pageKey)
+      ;(pageHighlights || []).forEach((highlight) => {
+        const isReferenceHighlight = highlight?.aiType === 'reference'
+        const referenceId = highlight?.referenceId
+        if (!isReferenceHighlight || !referenceId) return
+        if (activeReferenceIds.has(referenceId)) return
+        staleReferenceHighlights.push({
+          pageNum,
+          highlightId: highlight.id,
+          annotationId: highlight.annotationId || null,
+        })
+      })
+    })
+
+    if (!staleReferenceHighlights.length) return
+
+    const staleKeySet = new Set(
+      staleReferenceHighlights.map((item) => `${item.pageNum}:${item.highlightId}`)
+    )
+
+    setHighlights((prev) => {
+      const next = { ...prev }
+      Object.keys(next).forEach((pageKey) => {
+        const pageNum = Number(pageKey)
+        const pageItems = next[pageNum] || []
+        next[pageNum] = pageItems.filter(
+          (item) => !staleKeySet.has(`${pageNum}:${item.id}`)
+        )
+      })
+      return next
+    })
+
+    if (
+      selectedHighlightId &&
+      staleKeySet.has(`${selectedHighlightId.pageNum}:${selectedHighlightId.highlightId}`)
+    ) {
+      clearSelectedHighlight()
+      setSelectedText('')
+    }
+
+    const annotationIds = staleReferenceHighlights
+      .map((item) => item.annotationId)
+      .filter(Boolean)
+    if (annotationIds.length && supabase) {
+      void supabase.from('annotations').delete().in('id', annotationIds)
+    }
+  }, [
+    highlights,
+    folderReferences,
+    isReferencesLoading,
+    selectedHighlightId,
+    clearSelectedHighlight,
+    supabase,
+  ])
 
   // Load persisted annotations + threads
   useEffect(() => {
@@ -361,6 +440,7 @@ export default function ReaderScreen() {
   }, [searchParams]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -470,6 +550,10 @@ export default function ReaderScreen() {
   useEffect(() => {
     const handleParentMessage = (event) => {
       if (event.data?.type === 'reference:add-to-chat' && event.data.reference?.id) {
+        setActiveChatRefs((prev) => {
+          if (prev.some((ref) => ref.id === event.data.reference.id)) return prev;
+          return [...prev, event.data.reference];
+        });
         if (accountId) {
           attachToFile(accountId, event.data.reference.id);
           setRefSavedFlash(true);
@@ -559,7 +643,8 @@ export default function ReaderScreen() {
       setMenuPosition(null);
       
       const isChatHighlight = ['chat', 'explanation'].includes(highlight.aiType);
-      if (isChatHighlight && isPanelCollapsed) setIsPanelCollapsed(false);
+      const isReferenceHighlight = highlight.aiType === 'reference';
+      if ((isChatHighlight || isReferenceHighlight) && isPanelCollapsed) setIsPanelCollapsed(false);
 
       if (highlight.aiType === 'reference' && highlight.referenceId && typeof window !== 'undefined') {
         window.parent?.postMessage(
@@ -644,8 +729,8 @@ export default function ReaderScreen() {
     setIsChatLoading(true);
     try {
       const fullDocumentText = await extractFullPdfContext();
-      const referenceContext = (fileRefs || []).map((ref, idx) => ({
-        label: `R${idx + 1}`,
+      const referenceContext = (activeChatRefs || []).map((ref) => ({
+        label: `R${ref.referenceNumber}`,
         sourceDocTitle: ref.sourceDocTitle || 'Untitled source',
         pageNumber: ref.pageNumber || null,
         selectedText: ref.selectedText || ''
@@ -662,6 +747,18 @@ export default function ReaderScreen() {
           references: referenceContext
         }
       );
+      const citedLabels = new Set();
+      const citationRegex = /\[(R\d+)\]/gi;
+      let citationMatch = citationRegex.exec(aiResponse);
+      while (citationMatch) {
+        citedLabels.add(String(citationMatch[1]).toUpperCase());
+        citationMatch = citationRegex.exec(aiResponse);
+      }
+      if (citedLabels.size > 0) {
+        setActiveChatRefs((prev) =>
+          prev.filter((ref) => !citedLabels.has(`R${ref.referenceNumber}`.toUpperCase()))
+        );
+      }
 
       // Add AI response to chat history
       const finalChatHistory = [
@@ -847,12 +944,25 @@ export default function ReaderScreen() {
   }, [menuPosition]);
 
   // Get selected highlight for display
-  const selectedHighlight = getSelectedHighlight();
   const currentPageHighlights = highlights[currentPageInView] || [];
 
   const showRightPanel = Boolean(
-    selectedHighlight && ['chat', 'explanation'].includes(selectedHighlight.aiType)
+    selectedHighlight && ['chat', 'explanation', 'reference'].includes(selectedHighlight.aiType)
   );
+
+  const handleGoToSynthesisFromReference = useCallback((usageEntry) => {
+    if (!usageEntry?.synthesisDocId) return;
+    if (typeof window !== 'undefined') {
+      window.parent?.postMessage(
+        {
+          type: 'synthesis:navigate',
+          synthesisDocId: usageEntry.synthesisDocId,
+          referenceId: selectedHighlight?.referenceId || null,
+        },
+        '*'
+      );
+    }
+  }, [selectedHighlight?.referenceId]);
 
   if (!pdfFile) {
     return null;
@@ -999,82 +1109,16 @@ export default function ReaderScreen() {
                     isChatLoading={isChatLoading}
                     onDeleteHighlight={handleDeleteHighlight}
                     isDeletingHighlight={isDeletingHighlight}
+                    referenceUsageEntries={selectedReferenceUsages}
+                    isReferenceUsageLoading={isLoadingSelectedReferenceUsages}
+                    onGoToSynthesisUsage={handleGoToSynthesisFromReference}
+                    activeChatRefs={activeChatRefs}
+                    onRemoveActiveChatRef={(refId) =>
+                      setActiveChatRefs((prev) => prev.filter((ref) => ref.id !== refId))
+                    }
                   />
                 </div>
 
-                {!isPanelCollapsed && fileRefs.length > 0 && (
-                  <div className="border-t border-slate-200/60 bg-white flex flex-col min-h-0 flex-1">
-                    <div className="px-4 py-3 flex items-center justify-between">
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        References ({fileRefs.length})
-                      </p>
-                      <p className="text-[10px] text-slate-400">Drag to a file to attach</p>
-                    </div>
-                    <div className="px-3 pb-3 space-y-2 overflow-y-auto flex-1">
-                      {fileRefs.map((ref) => (
-                        <div
-                          key={ref.id}
-                          className="group flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('application/lumi-reference', JSON.stringify(ref));
-                            e.dataTransfer.effectAllowed = 'copy';
-                          }}
-                        >
-                          <BookmarkCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0 mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 text-xs">
-                              <span className="font-semibold text-indigo-500">R{ref.referenceNumber}</span>
-                              <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
-                              {ref.pageNumber && <span className="text-slate-400">p.{ref.pageNumber}</span>}
-                            </div>
-                            <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                              &ldquo;{ref.selectedText}&rdquo;
-                            </p>
-                            {synthesisUsageByRef?.[ref.id]?.count > 0 && (
-                              <div className="mt-1.5 flex items-center gap-2">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                  Used in {synthesisUsageByRef[ref.id].count} {synthesisUsageByRef[ref.id].count === 1 ? 'synthesis' : 'syntheses'}
-                                </span>
-                                <button
-                                  type="button"
-                                  className="text-[10px] px-2 py-0.5 rounded-md border border-indigo-200 text-indigo-600 hover:bg-indigo-50"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    const target = synthesisUsageByRef?.[ref.id]?.syntheses?.[0];
-                                    if (!target?.synthesisDocId) return;
-                                    window.parent.postMessage(
-                                      {
-                                        type: 'synthesis:navigate',
-                                        synthesisDocId: target.synthesisDocId,
-                                        referenceId: ref.id,
-                                      },
-                                      '*'
-                                    );
-                                  }}
-                                >
-                                  Go to synthesis
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              detachFromFile(ref.id);
-                            }}
-                            className="p-0.5 text-slate-400 hover:text-rose-500 flex-shrink-0"
-                            title="Remove from this file"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </>

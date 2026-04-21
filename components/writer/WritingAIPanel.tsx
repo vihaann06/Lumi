@@ -53,6 +53,15 @@ export default function WritingAIPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const consumeUsedReferences = useCallback(
+    (content: string, refCtx: ReturnType<typeof refsToContext>) => {
+      const mentions = extractReferenceMentions(content, refCtx)
+      if (!mentions.length) return
+      mentions.forEach((mention) => onRemoveActiveRef(mention.referenceId))
+    },
+    [onRemoveActiveRef]
+  )
+
   const handleSend = async () => {
     const trimmed = input.trim()
     if (!trimmed || isLoading) return
@@ -68,6 +77,7 @@ export default function WritingAIPanel({
         const refCtx = refsToContext(activeRefs)
         const aiContent = await synthesizeChat(updated, refCtx, documentContent)
         setMessages([...updated, { role: 'assistant', content: aiContent }])
+        consumeUsedReferences(aiContent, refCtx)
       } catch (err: any) {
         setMessages([
           ...updated,
@@ -89,6 +99,9 @@ export default function WritingAIPanel({
       const proposal = await synthesizeEditProposal(trimmed, refCtx, documentContent)
       proposal.referenceMentions = extractReferenceMentions(proposal.proposedContent, refCtx)
       onProposeEdit(proposal)
+      if (proposal.referenceMentions?.length) {
+        proposal.referenceMentions.forEach((mention) => onRemoveActiveRef(mention.referenceId))
+      }
       setMessages((prev) => [
         ...prev,
         { role: 'user', content: `[Edit request] ${trimmed}` },
