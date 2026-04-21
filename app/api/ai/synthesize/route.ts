@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-// Prefer env var; fall back to the key used by the reading-side service
-const API_KEY =
-  process.env.OPENAI_API_KEY ||
-  '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'
-const API_URL = 'https://api.openai.com/v1/chat/completions'
+import { isClaudeConfigured, requestClaude } from '@/lib/services/ai/claudeServer'
 
 interface ReferenceContext {
   id: string
@@ -52,49 +47,26 @@ export async function POST(req: NextRequest) {
       documentContent?: string
     } = body
 
-    if (!API_KEY) {
+    if (!isClaudeConfigured()) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
+        { error: 'Claude API key not configured. Set ANTHROPIC_API_KEY in .env.' },
         { status: 500 }
       )
     }
 
     const systemPrompt = buildSystemPrompt(references || [])
-    const systemMessages: { role: string; content: string }[] = [
-      { role: 'system', content: systemPrompt },
-    ]
+    const docContext = documentContent
+      ? `\n\nThe user's current document draft:\n\n${documentContent.slice(0, 3000)}`
+      : ''
 
-    if (documentContent) {
-      systemMessages.push({
-        role: 'system',
-        content: `The user's current document draft:\n\n${documentContent.slice(0, 3000)}`,
-      })
-    }
-
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [...systemMessages, ...messages],
-        max_tokens: 1500,
-        temperature: 0.7,
-      }),
+    const content = await requestClaude({
+      system: `${systemPrompt}${docContext}`,
+      messages: (messages || [])
+        .filter((m) => m?.role === 'user' || m?.role === 'assistant')
+        .map((m) => ({ role: m.role, content: m.content })),
+      maxTokens: 1500,
+      temperature: 0.7,
     })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      return NextResponse.json(
-        { error: errorData.error?.message || 'OpenAI request failed' },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content || ''
 
     return NextResponse.json({ content })
   } catch (err: any) {

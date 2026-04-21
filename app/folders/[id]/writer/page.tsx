@@ -1,12 +1,13 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Writer from '../../../../components/writer/Writer'
 import WritingAIPanel from '../../../../components/writer/WritingAIPanel'
 import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useFileReferences } from '@/hooks/useFileReferences'
+import type { Reference } from '@/lib/types/references'
 
 export default function FolderWritePage() {
   return (
@@ -35,9 +36,11 @@ function FolderWriteContent() {
   const minPanel = 280
   const maxPanel = 520
   const supabase = getSupabaseClient()
+  const [accountId, setAccountId] = useState<string | null>(null)
+  const [extraRefs, setExtraRefs] = useState<Reference[]>([])
 
   // File-scoped references: only refs attached to this specific document
-  const { references: fileRefs, detach: detachRef } = useFileReferences(docId || null)
+  const { references: fileRefs, detach: detachRef, attach: attachRef } = useFileReferences(docId || null)
 
   // Load existing content
   useEffect(() => {
@@ -66,6 +69,22 @@ function FolderWriteContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId])
 
+  // Auth for attaching references
+  useEffect(() => {
+    if (!supabase) return
+    const hydrate = async () => {
+      const session = await supabase.auth.getSession()
+      setAccountId(session.data.session?.user?.id ?? null)
+    }
+    hydrate()
+    const { data: listener } = supabase.auth.onAuthStateChange((_evt, session) => {
+      setAccountId(session?.user?.id ?? null)
+    })
+    return () => {
+      listener?.subscription.unsubscribe()
+    }
+  }, [supabase])
+
   // Save content (debounced)
   useEffect(() => {
     if (!supabase || !docId) return
@@ -81,6 +100,80 @@ function FolderWriteContent() {
     }, 600)
     return () => clearTimeout(timer)
   }, [content, docId, supabase])
+
+  const activeRefs = useMemo(() => {
+    const seen = new Set<string>()
+    const merged: Reference[] = []
+    fileRefs.forEach((r) => {
+      if (!seen.has(r.id)) {
+        seen.add(r.id)
+        merged.push(r)
+      }
+    })
+    extraRefs.forEach((r) => {
+      if (!seen.has(r.id)) {
+        seen.add(r.id)
+        merged.push(r)
+      }
+    })
+    return merged
+  }, [fileRefs, extraRefs])
+
+  const addActiveRef = useCallback(
+    (ref: Reference) => {
+      setExtraRefs((prev) => {
+        if (prev.find((r) => r.id === ref.id)) return prev
+        if (fileRefs.find((r) => r.id === ref.id)) return prev
+        return [...prev, ref]
+      })
+      if (accountId && attachRef) {
+        attachRef(accountId, ref.id)
+      }
+    },
+    [accountId, attachRef, fileRefs]
+  )
+
+  const handleReferenceDrop = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/lumi-reference')) return
+    e.preventDefault()
+    const raw = e.dataTransfer.getData('application/lumi-reference')
+    if (!raw) return
+    try {
+      const ref = JSON.parse(raw) as Reference
+      addActiveRef(ref)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'reference:add-to-chat' && event.data.reference) {
+        addActiveRef(event.data.reference as Reference)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [addActiveRef])
+
+  useEffect(() => {
+    setExtraRefs((prev) => prev.filter((r) => !fileRefs.find((fr) => fr.id === r.id)))
+  }, [fileRefs])
+
+  const handleRemoveActiveRef = (id: string) => {
+    detachRef(id)
+    setExtraRefs((prev) => prev.filter((r) => r.id !== id))
+  }
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'reference:add-to-chat' && event.data.reference) {
+        addActiveRef(event.data.reference as Reference)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [addActiveRef])
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
@@ -140,10 +233,17 @@ function FolderWriteContent() {
             minWidth: panelCollapsed ? 48 : minPanel,
             maxWidth: panelCollapsed ? 48 : maxPanel,
           }}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('application/lumi-reference')) {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+            }
+          }}
+          onDrop={handleReferenceDrop}
         >
           <WritingAIPanel
-            activeRefs={fileRefs}
-            onRemoveActiveRef={(id) => detachRef(id)}
+            activeRefs={activeRefs}
+            onRemoveActiveRef={handleRemoveActiveRef}
             documentContent={content}
             isCollapsed={panelCollapsed}
             onToggleCollapse={() => setPanelCollapsed(!panelCollapsed)}

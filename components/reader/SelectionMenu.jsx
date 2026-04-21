@@ -1,13 +1,12 @@
 import React from 'react';
-import { Lightbulb, FileText, Highlighter, BookmarkPlus } from 'lucide-react';
+import { MessageSquare, Highlighter, BookmarkPlus } from 'lucide-react';
 
 /**
  * Selection Menu Component
  */
 export default function SelectionMenu({
   menuPosition,
-  onAIExplain,
-  onAISummary,
+  onAIChat,
   onHighlight,
   onSaveReference
 }) {
@@ -26,18 +25,11 @@ export default function SelectionMenu({
     >
       <div className="flex gap-1">
         <button
-          onClick={onAIExplain}
+          onClick={onAIChat}
           className="px-3 py-2 text-sm font-medium text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/50 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 whitespace-nowrap"
         >
-          <Lightbulb className="w-4 h-4" />
-          Explain
-        </button>
-        <button
-          onClick={onAISummary}
-          className="px-3 py-2 text-sm font-medium text-slate-700 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 whitespace-nowrap"
-        >
-          <FileText className="w-4 h-4" />
-          Summary
+          <MessageSquare className="w-4 h-4" />
+          Chat
         </button>
         <button
           onClick={onHighlight}

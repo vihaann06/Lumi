@@ -1,11 +1,13 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Loader2, Lightbulb, FileText, Search, ChevronRight, ChevronLeft, Send, Trash } from 'lucide-react';
+import { Loader2, MessageSquare, FileText, Search, ChevronRight, ChevronLeft, Send, Trash } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { truncateTextForDisplay } from '@/lib/utils/highlightUtils';
 
 /**
- * Explanation Panel Component with Chat Interface
+ * Reader AI panel (chat-first, with legacy summary/reference support)
  */
 export default function ExplanationPanel({
   isCollapsed,
@@ -24,20 +26,48 @@ export default function ExplanationPanel({
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const previousChatLengthRef = useRef(0);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
-  // Get chat history from selected highlight (only for explanations)
   const chatHistory = selectedHighlight?.chatHistory || [];
-  const hasChatHistory = chatHistory.length > 0;
-  const isExplanationHighlight = selectedHighlight?.aiType === 'explanation';
+  const isChatHighlight = selectedHighlight?.aiType === 'chat' || selectedHighlight?.aiType === 'explanation';
 
-  // Scroll to bottom when chat history updates
+  const markdownComponents = {
+    h1: ({ children }) => <h1 className="text-base font-semibold mt-2 mb-1">{children}</h1>,
+    h2: ({ children }) => <h2 className="text-sm font-semibold mt-2 mb-1">{children}</h2>,
+    h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+    p: ({ children }) => <p className="text-sm leading-relaxed whitespace-pre-wrap mb-2 last:mb-0">{children}</p>,
+    ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-2">{children}</ul>,
+    ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-2">{children}</ol>,
+    li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+    em: ({ children }) => <em className="italic">{children}</em>,
+    code: ({ children }) => (
+      <code className="text-[12px] bg-slate-200/70 text-slate-800 rounded px-1 py-0.5">{children}</code>
+    ),
+    pre: ({ children }) => (
+      <pre className="text-[12px] bg-slate-200/70 text-slate-800 rounded-lg p-2 overflow-x-auto mb-2">
+        {children}
+      </pre>
+    ),
+    blockquote: ({ children }) => (
+      <blockquote className="border-l-2 border-slate-300 pl-3 text-slate-600 italic mb-2">{children}</blockquote>
+    ),
+  };
+
   useEffect(() => {
-    if (!shouldAutoScroll) return;
+    const hasNewChatContent = chatHistory.length > previousChatLengthRef.current || isChatLoading;
+    previousChatLengthRef.current = chatHistory.length;
+    if (!hasNewChatContent || !shouldAutoScroll) return;
     if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      chatEndRef.current.scrollIntoView({ behavior: 'auto' });
     }
-  }, [chatHistory, isChatLoading, shouldAutoScroll]);
+  }, [chatHistory.length, isChatLoading, shouldAutoScroll]);
+
+  useEffect(() => {
+    previousChatLengthRef.current = chatHistory.length;
+    setShouldAutoScroll(true);
+  }, [selectedHighlight?.id]);
 
   useEffect(() => {
     const el = chatContainerRef.current;
@@ -53,7 +83,7 @@ export default function ExplanationPanel({
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim() || !onSendChatMessage || !selectedHighlight) return;
-    
+
     onSendChatMessage(chatInput.trim());
     setChatInput('');
   };
@@ -76,8 +106,8 @@ export default function ExplanationPanel({
     <div className="h-full flex flex-col">
       <div className="sticky top-0 bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-5 py-4 flex items-center justify-between z-10">
         <h2 className="text-sm font-medium text-slate-700 flex items-center gap-2">
-          <Lightbulb className="w-4 h-4 text-indigo-500" />
-          AI Explanation
+          <MessageSquare className="w-4 h-4 text-indigo-500" />
+          AI Chat
         </h2>
         <div className="flex items-center gap-2">
           {selectedHighlight && onDeleteHighlight ? (
@@ -103,12 +133,11 @@ export default function ExplanationPanel({
           </button>
         </div>
       </div>
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Selected Text Display */}
         {(selectedText || selectedHighlight) && (
           <div className={`p-4 border-b border-slate-200/60 ${
-            selectedHighlight?.aiType === 'explanation'
+            isChatHighlight
               ? 'bg-indigo-50/30'
               : selectedHighlight?.aiType === 'summary'
               ? 'bg-purple-50/30'
@@ -117,7 +146,7 @@ export default function ExplanationPanel({
               : 'bg-slate-50/50'
           }`}>
             <p className={`text-xs font-medium mb-2 uppercase tracking-wide ${
-              selectedHighlight?.aiType === 'explanation'
+              isChatHighlight
                 ? 'text-indigo-600'
                 : selectedHighlight?.aiType === 'summary'
                 ? 'text-purple-600'
@@ -128,7 +157,7 @@ export default function ExplanationPanel({
               {selectedHighlight ? 'Selected Highlight' : 'Selected Text'}
             </p>
             <p className={`text-sm leading-relaxed ${
-              selectedHighlight?.aiType === 'explanation'
+              isChatHighlight
                 ? 'text-indigo-900'
                 : selectedHighlight?.aiType === 'summary'
                 ? 'text-purple-900'
@@ -141,14 +170,19 @@ export default function ExplanationPanel({
           </div>
         )}
 
-        {/* Chat Interface for AI Explanations Only */}
-        {isExplanationHighlight && hasChatHistory ? (
+        {isChatHighlight ? (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Chat Messages */}
-            <div 
+            <div
               ref={chatContainerRef}
               className="flex-1 overflow-y-auto p-5 space-y-4"
+              onWheel={(e) => e.stopPropagation()}
             >
+              {chatHistory.length === 0 ? (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-800">
+                  Ask anything about this highlight. This chat stays attached to this exact highlight.
+                </div>
+              ) : null}
+
               {chatHistory.map((message, index) => (
                 <div
                   key={index}
@@ -161,11 +195,17 @@ export default function ExplanationPanel({
                         : 'bg-slate-100 text-slate-800'
                     }`}
                   >
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'assistant' ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {message.content}
+                      </ReactMarkdown>
+                    ) : (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    )}
                   </div>
                 </div>
               ))}
-              
+
               {isChatLoading && (
                 <div className="flex justify-start">
                   <div className="bg-slate-100 rounded-2xl px-4 py-2.5">
@@ -173,18 +213,17 @@ export default function ExplanationPanel({
                   </div>
                 </div>
               )}
-              
+
               <div ref={chatEndRef} />
             </div>
 
-            {/* Chat Input */}
             <div className="border-t border-slate-200/60 p-4 bg-white/50">
               <form onSubmit={handleSendMessage} className="flex gap-2">
                 <input
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask a follow-up question..."
+                  placeholder="Ask about this highlighted passage..."
                   className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-300 text-sm text-slate-700 placeholder:text-slate-400 transition-all"
                   disabled={isChatLoading || !selectedHighlight}
                 />
@@ -205,22 +244,6 @@ export default function ExplanationPanel({
               <p className="text-sm text-slate-400">Thinking...</p>
             </div>
           </div>
-        ) : (selectedHighlight?.aiContent && selectedHighlight.aiType === 'explanation') || explanation ? (
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                  <Lightbulb className="w-4 h-4 text-indigo-600" />
-                </div>
-                <h3 className="text-sm font-semibold text-slate-700">Explanation</h3>
-              </div>
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                {selectedHighlight?.aiContent && selectedHighlight.aiType === 'explanation' 
-                  ? selectedHighlight.aiContent 
-                  : explanation}
-              </p>
-            </div>
-          </div>
         ) : (selectedHighlight?.aiContent && selectedHighlight.aiType === 'summary') || summary ? (
           <div className="flex-1 overflow-y-auto p-5">
             <div className="space-y-3">
@@ -230,11 +253,11 @@ export default function ExplanationPanel({
                 </div>
                 <h3 className="text-sm font-semibold text-slate-700">Summary</h3>
               </div>
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                {selectedHighlight?.aiContent && selectedHighlight.aiType === 'summary' 
-                  ? selectedHighlight.aiContent 
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {selectedHighlight?.aiContent && selectedHighlight.aiType === 'summary'
+                  ? selectedHighlight.aiContent
                   : summary}
-              </p>
+              </ReactMarkdown>
             </div>
           </div>
         ) : referenceCheck ? (
@@ -246,16 +269,18 @@ export default function ExplanationPanel({
                 </div>
                 <h3 className="text-sm font-semibold text-slate-700">Reference Check</h3>
               </div>
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{referenceCheck}</p>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {referenceCheck}
+              </ReactMarkdown>
             </div>
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-center px-8">
             <div className="space-y-3">
               <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto">
-                <Lightbulb className="w-8 h-8 text-slate-300" />
+                <MessageSquare className="w-8 h-8 text-slate-300" />
               </div>
-              <p className="text-sm text-slate-400 font-light">Select text and choose an action</p>
+              <p className="text-sm text-slate-400 font-light">Select text and choose Chat</p>
             </div>
           </div>
         )}

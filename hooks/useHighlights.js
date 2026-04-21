@@ -92,6 +92,7 @@ export const useHighlights = (currentPageInView, pdfContainerRef) => {
 
   return {
     highlights,
+    setHighlights,
     selectedHighlightId,
     addHighlight,
     selectHighlight,

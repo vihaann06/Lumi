@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -9,7 +9,6 @@ import { useRouter, useSearchParams, useParams } from 'next/navigation';
 // Hooks
 import { usePDFViewer } from '@/hooks/usePDFViewer';
 import { useHighlights } from '@/hooks/useHighlights';
-import { useAIActions } from '@/hooks/useAIActions';
 import { useReferences } from '@/hooks/useReferences';
 import { useFileReferences } from '@/hooks/useFileReferences';
 
@@ -50,6 +49,7 @@ export default function ReaderScreen() {
   // Highlights hook
   const {
     highlights,
+    setHighlights,
     selectedHighlightId,
     addHighlight,
     selectHighlight,
@@ -59,21 +59,6 @@ export default function ReaderScreen() {
     setHighlightsMap,
     updateHighlight
   } = useHighlights(currentPageInView, pdfContainerRef);
-
-  // AI Actions hook - pass callback to create AI highlights
-  const {
-    explanation,
-    summary,
-    referenceCheck,
-    isLoading,
-    activeAction,
-    handleAIExplain,
-    handleAISummary,
-    handleReferenceCheck,
-    clearAIActions
-  } = useAIActions((selectedText, selectedRange, currentPageInView, aiType, aiContent) => {
-    return addHighlight(selectedText, selectedRange, currentPageInView, aiType, aiContent);
-  });
 
   const hideHeader = (searchParams.get('hideHeader') || '').toLowerCase() === '1' || (searchParams.get('hideHeader') || '').toLowerCase() === 'true';
 
@@ -89,6 +74,10 @@ export default function ReaderScreen() {
   const minRight = 260;
   const maxRight = 640;
   const [zoom, setZoom] = useState(1);
+  const [pdfDocumentContext, setPdfDocumentContext] = useState('');
+  const pdfContextPromiseRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const MAX_PDF_CONTEXT_CHARS = 700000;
   const workspaceId = docMeta?.workspaceId;
   const folderId = docMeta?.folderId || folderIdParam;
   const accountId = authUser?.id;
@@ -230,7 +219,7 @@ export default function ReaderScreen() {
         page: pageNum,
         quote: highlight.text,
         anchor_json: anchor,
-        has_thread: highlight.aiType === 'explanation'
+        has_thread: highlight.aiType === 'chat' || highlight.aiType === 'explanation'
       })
       .select('id')
       .single();
@@ -250,7 +239,7 @@ export default function ReaderScreen() {
 
     let threadId = highlight.threadId;
 
-    if (highlight.aiType === 'explanation' && annotationId) {
+    if ((highlight.aiType === 'chat' || highlight.aiType === 'explanation') && annotationId) {
       const { data: threadRow, error: threadError } = await supabase
         .from('threads')
         .insert({
@@ -351,6 +340,70 @@ export default function ReaderScreen() {
     if (stored) setFileName(stored);
   }, [searchParams]);
 
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const extractFullPdfContext = async () => {
+    if (pdfDocumentContext) return pdfDocumentContext;
+    if (!pdfFile) return '';
+    if (pdfContextPromiseRef.current) return pdfContextPromiseRef.current;
+
+    pdfContextPromiseRef.current = (async () => {
+      try {
+        const response = await fetch(pdfFile);
+        const buffer = await response.arrayBuffer();
+        const loadingTask = pdfjs.getDocument({
+          data: buffer,
+          disableWorker: true,
+        });
+        const pdfDoc = await loadingTask.promise;
+        const pages = [];
+
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item) => (item?.str ? item.str : ''))
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          pages.push(`[Page ${i}] ${pageText}`);
+        }
+
+        const fullText = pages.join('\n\n').trim();
+        if (!fullText) {
+          setPdfDocumentContext('');
+          return '';
+        }
+
+        const boundedText =
+          fullText.length > MAX_PDF_CONTEXT_CHARS
+            ? `${fullText.slice(0, MAX_PDF_CONTEXT_CHARS)}\n\n[PDF context truncated due to size.]`
+            : fullText;
+
+        if (isMountedRef.current) {
+          setPdfDocumentContext(boundedText);
+        }
+        return boundedText;
+      } catch (error) {
+        console.error('Failed to extract PDF context for AI chat', error);
+        return '';
+      } finally {
+        pdfContextPromiseRef.current = null;
+      }
+    })();
+
+    return pdfContextPromiseRef.current;
+  };
+
+  useEffect(() => {
+    setPdfDocumentContext('');
+    pdfContextPromiseRef.current = null;
+  }, [docId, pdfFile]);
+
   // Handle text selection
   const handleTextSelection = (e) => {
     if (e.target.closest('.highlight-overlay')) {
@@ -364,7 +417,6 @@ export default function ReaderScreen() {
       if (text.length > 0) {
         setSelectedText(text);
         clearSelectedHighlight();
-        clearAIActions();
         
         const range = selection.getRangeAt(0);
         setSelectedRange(range);
@@ -409,40 +461,38 @@ export default function ReaderScreen() {
       setSelectedText(highlight.text);
       setMenuPosition(null);
       
-      // If it's not an AI highlight, clear AI actions
-      // The ExplanationPanel will show AI content from the highlight if it exists
-      if (!highlight.aiType || !highlight.aiContent) {
-        clearAIActions();
-      }
+      const isChatHighlight = ['chat', 'explanation'].includes(highlight.aiType);
+      if (isChatHighlight && isPanelCollapsed) setIsPanelCollapsed(false);
     }
   };
 
-  // Handle AI actions with selected text
-  const handleAIExplainClick = async () => {
-    const highlightResult = await handleAIExplain(selectedText, selectedRange, currentPageInView);
+  // Handle AI chat action with selected text
+  const handleAIChatClick = async () => {
+    if (!selectedText || !selectedRange) return;
+
+    const highlightResult = addHighlight(selectedText, selectedRange, currentPageInView, 'chat', null);
     setMenuPosition(null);
-    
-    // Automatically select the highlight to show chat interface
-    if (highlightResult && highlightResult.highlight) {
+
+    if (highlightResult?.highlight) {
       const persisted = await persistHighlight(highlightResult.pageNum, highlightResult.highlight);
       const resolvedId = persisted?.annotationId || highlightResult.highlight.id;
       selectHighlight(highlightResult.pageNum, resolvedId);
       setSelectedText(highlightResult.highlight.text);
+      if (isPanelCollapsed) setIsPanelCollapsed(false);
+      // Warm the full-document context after user explicitly enters chat mode.
+      extractFullPdfContext();
     }
+    setSelectedRange(null);
+    window.getSelection().removeAllRanges();
   };
 
-  const handleAISummaryClick = async () => {
-    const highlightResult = await handleAISummary(selectedText, selectedRange, currentPageInView);
-    if (highlightResult?.highlight) {
-      await persistHighlight(highlightResult.pageNum, highlightResult.highlight);
-    }
-    setMenuPosition(null);
-    // Summaries don't have chat functionality, so we don't auto-select them
-  };
-
-  // Handle chat message (only for explanations, not summaries)
+  // Handle chat message for chat-enabled highlights
   const handleSendChatMessage = async (message) => {
-    if (!selectedHighlight || !selectedHighlightId || selectedHighlight.aiType !== 'explanation') return;
+    if (
+      !selectedHighlight ||
+      !selectedHighlightId ||
+      !['chat', 'explanation'].includes(selectedHighlight.aiType)
+    ) return;
 
     const { pageNum, highlightId } = selectedHighlightId;
     const currentChatHistory = selectedHighlight.chatHistory || [];
@@ -486,10 +536,17 @@ export default function ReaderScreen() {
     // Get AI response
     setIsChatLoading(true);
     try {
+      const fullDocumentText = await extractFullPdfContext();
       const aiResponse = await chatWithAI(
         selectedHighlight.text,
         updatedChatHistory,
-        message
+        message,
+        {
+          documentTitle: fileName,
+          pageNumber: pageNum,
+          totalPages: numPages,
+          fullDocumentText
+        }
       );
 
       // Add AI response to chat history
@@ -583,7 +640,6 @@ export default function ReaderScreen() {
 
     removeHighlightFromState(pageNum, target.annotationId || target.id);
     clearSelectedHighlight();
-    clearAIActions();
     setSelectedText('');
     setSelectedRange(null);
   };
@@ -624,14 +680,8 @@ export default function ReaderScreen() {
   const selectedHighlight = getSelectedHighlight();
   const currentPageHighlights = highlights[currentPageInView] || [];
 
-  // Only show the right panel when there's AI content, a highlight is selected, or file has references
-  const showRightPanel = !!(
-    isLoading ||
-    explanation ||
-    summary ||
-    referenceCheck ||
-    selectedHighlight ||
-    fileRefs.length
+  const showRightPanel = Boolean(
+    selectedHighlight && ['chat', 'explanation'].includes(selectedHighlight.aiType)
   );
 
   if (!pdfFile) {
@@ -723,8 +773,7 @@ export default function ReaderScreen() {
           {/* Selection Menu */}
           <SelectionMenu
             menuPosition={menuPosition}
-            onAIExplain={handleAIExplainClick}
-            onAISummary={handleAISummaryClick}
+            onAIChat={handleAIChatClick}
             onHighlight={handleHighlight}
             onSaveReference={handleSaveReference}
           />
@@ -736,7 +785,6 @@ export default function ReaderScreen() {
           />
         </div>
 
-        {/* Divider + Explanation Panel — only when AI content is active */}
         {showRightPanel && (
           <>
             <div
@@ -759,74 +807,78 @@ export default function ReaderScreen() {
               }}
             />
             <div
-              className="bg-white border-l border-slate-200/60 flex flex-col overflow-hidden flex-shrink-0"
-              style={{ width: rightPanelWidth }}
+              className="border-l border-slate-200/60 bg-white/90 backdrop-blur-sm flex-shrink-0 overflow-hidden"
+              style={{
+                width: isPanelCollapsed ? 48 : rightPanelWidth,
+                minWidth: isPanelCollapsed ? 48 : minRight,
+                maxWidth: isPanelCollapsed ? 48 : maxRight,
+              }}
             >
-              {/* Show ExplanationPanel only when there's AI content or a highlight */}
-              {(isLoading || explanation || summary || referenceCheck || selectedHighlight) && (
-                <ExplanationPanel
-                  isCollapsed={false}
-                  onToggleCollapse={() => {}}
-                  selectedText={selectedText}
-                  selectedHighlight={selectedHighlight}
-                  isLoading={isLoading}
-                  explanation={explanation}
-                  summary={summary}
-                  referenceCheck={referenceCheck}
-                  onSendChatMessage={handleSendChatMessage}
-                  isChatLoading={isChatLoading}
-                  onDeleteHighlight={handleDeleteHighlight}
-                  isDeletingHighlight={isDeletingHighlight}
-                />
-              )}
-
-              {/* File-scoped reference chips — click to send to another file */}
-              {fileRefs.length > 0 && (
-                <div className={`${(isLoading || explanation || summary || referenceCheck || selectedHighlight) ? 'border-t border-slate-200/60' : ''} bg-white flex flex-col flex-1`}>
-                  <div className="px-4 py-3 flex items-center justify-between">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      References ({fileRefs.length})
-                    </p>
-                    <p className="text-[10px] text-slate-400">Drag to a file to attach</p>
-                  </div>
-                  <div className="px-3 pb-3 space-y-2 overflow-y-auto flex-1">
-                    {fileRefs.map((ref, idx) => (
-                      <div
-                        key={ref.id}
-                        className="flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('application/lumi-reference', JSON.stringify(ref));
-                          e.dataTransfer.effectAllowed = 'copy';
-                        }}
-                      >
-                        <BookmarkCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <span className="font-semibold text-indigo-500">R{idx + 1}</span>
-                            <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
-                            {ref.pageNumber && <span className="text-slate-400">p.{ref.pageNumber}</span>}
-                          </div>
-                          <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                            &ldquo;{ref.selectedText}&rdquo;
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            detachFromFile(ref.id);
-                          }}
-                          className="p-0.5 text-slate-400 hover:text-rose-500 flex-shrink-0"
-                          title="Remove from this file"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+              <div className="h-full flex flex-col">
+                <div className={isPanelCollapsed ? 'h-full' : 'flex-1 min-h-0'}>
+                  <ExplanationPanel
+                    isCollapsed={isPanelCollapsed}
+                    onToggleCollapse={() => setIsPanelCollapsed((v) => !v)}
+                    selectedText={selectedText}
+                    selectedHighlight={selectedHighlight}
+                    isLoading={false}
+                    explanation={null}
+                    summary={null}
+                    referenceCheck={null}
+                    onSendChatMessage={handleSendChatMessage}
+                    isChatLoading={isChatLoading}
+                    onDeleteHighlight={handleDeleteHighlight}
+                    isDeletingHighlight={isDeletingHighlight}
+                  />
                 </div>
-              )}
+
+                {!isPanelCollapsed && fileRefs.length > 0 && (
+                  <div className="border-t border-slate-200/60 bg-white flex flex-col min-h-0 flex-1">
+                    <div className="px-4 py-3 flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        References ({fileRefs.length})
+                      </p>
+                      <p className="text-[10px] text-slate-400">Drag to a file to attach</p>
+                    </div>
+                    <div className="px-3 pb-3 space-y-2 overflow-y-auto flex-1">
+                      {fileRefs.map((ref, idx) => (
+                        <div
+                          key={ref.id}
+                          className="flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/lumi-reference', JSON.stringify(ref));
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                        >
+                          <BookmarkCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="font-semibold text-indigo-500">R{idx + 1}</span>
+                              <span className="font-medium text-slate-600 truncate">{ref.sourceDocTitle || 'Untitled'}</span>
+                              {ref.pageNumber && <span className="text-slate-400">p.{ref.pageNumber}</span>}
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                              &ldquo;{ref.selectedText}&rdquo;
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              detachFromFile(ref.id);
+                            }}
+                            className="p-0.5 text-slate-400 hover:text-rose-500 flex-shrink-0"
+                            title="Remove from this file"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}

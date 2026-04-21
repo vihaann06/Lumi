@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, useEffect, useState, useCallback } from 'react'
+import { ChangeEvent, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, FileText, Upload, Pencil, Trash2, BookmarkCheck } from 'lucide-react'
 import { useFolderData } from './useFolderData'
@@ -13,6 +13,7 @@ import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useReferences } from '@/hooks/useReferences'
 import { attachReferenceToFile } from '@/lib/db/queries/fileReferences'
 import { getCurrentUserId } from '@/lib/db/queries/auth'
+import ReferenceTray from '../../../components/references/ReferenceTray'
 
 export default function FolderPage() {
   const params = useParams<{ id: string }>()
@@ -30,8 +31,12 @@ export default function FolderPage() {
     renameDocument,
   } = useFolderData(folderId)
 
-  // Keep hook active so references stay fresh (used by reader/writer iframes indirectly)
-  useReferences(folderId || null)
+  const {
+    references,
+    isLoading: refsLoading,
+    removeReference,
+    refresh: refreshReferences,
+  } = useReferences(folderId || null)
 
   // UI state
   const [isNameModalOpen, setIsNameModalOpen] = useState(false)
@@ -52,6 +57,7 @@ export default function FolderPage() {
   const [sidebarWidth, setSidebarWidth] = useState(280)
   const minSidebar = 220
   const maxSidebar = 480
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
   // Drag-and-drop reference attachment
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
@@ -73,6 +79,13 @@ export default function FolderPage() {
     setActiveSrc(buildDocSrc(doc.id, doc.title || '', doc.doc_type || 'file'))
   }
 
+  const handleTraySelect = (reference: any) => {
+    const win = iframeRef.current?.contentWindow
+    if (win) {
+      win.postMessage({ type: 'reference:add-to-chat', reference }, '*')
+    }
+  }
+
   // Auto-select first doc
   useEffect(() => {
     if (documents.length && !activeDocId) {
@@ -81,7 +94,18 @@ export default function FolderPage() {
       setActiveDocId(null)
       setActiveSrc(null)
     }
-  }, [documents])
+  }, [documents, activeDocId])
+
+  // Refresh references when child iframes report new ones
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'reference:created') {
+        refreshReferences()
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [refreshReferences])
 
   // --- File operations ---
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -337,6 +361,7 @@ export default function FolderPage() {
             <div className="flex-1 min-w-0 overflow-hidden bg-white">
               {activeSrc ? (
                 <iframe
+                  ref={iframeRef}
                   key={activeSrc}
                   src={activeSrc}
                   className="w-full h-full"
@@ -352,6 +377,13 @@ export default function FolderPage() {
           </>
         )}
       </div>
+
+      <ReferenceTray
+        references={references}
+        isLoading={refsLoading}
+        onRemove={removeReference}
+        onSelect={handleTraySelect}
+      />
 
       {/* Modals */}
       {isReadModalOpen && (

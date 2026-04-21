@@ -204,8 +204,8 @@ export const findPageForSelection = (clientRects: DOMRectList, pages: HTMLElemen
 export const createHighlight = (text: string, highlightRects: Rect[], aiType: string | null = null, aiContent: string | null = null) => {
   const highlightId = Date.now();
   
-  // Initialize chat history with the initial AI response only for explanations (not summaries)
-  const chatHistory = (aiType === 'explanation' && aiContent) ? [
+  // Initialize chat history only when seeded with an initial AI response.
+  const chatHistory = ((aiType === 'chat' || aiType === 'explanation') && aiContent) ? [
     {
       role: 'assistant',
       content: aiContent,
@@ -218,7 +218,7 @@ export const createHighlight = (text: string, highlightRects: Rect[], aiType: st
     text,
     timestamp: highlightId,
     rects: highlightRects,
-    aiType, // 'explanation' or 'summary'
+    aiType, // 'chat' | 'explanation' | 'summary'
     aiContent, // The AI-generated content (kept for backward compatibility)
     chatHistory // Array of { role: 'user' | 'assistant', content: string, timestamp: number }
   };

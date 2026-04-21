@@ -104,11 +104,11 @@ export default function HighlightOverlay({
         
         const highlightId = highlight.id || idx;
         const isSelected = selectedHighlightId?.pageNum === pageNum && selectedHighlightId?.highlightId === highlightId;
-        const isAIHighlight = highlight.aiType === 'explanation' || highlight.aiType === 'summary';
+        const isChatHighlight = highlight.aiType === 'chat' || highlight.aiType === 'explanation';
         
         // Determine highlight color based on type
         let bgColor, bgColorSelected;
-        if (highlight.aiType === 'explanation') {
+        if (isChatHighlight) {
           bgColor = 'bg-blue-100';
           bgColorSelected = 'bg-blue-200';
         } else if (highlight.aiType === 'summary') {
@@ -127,7 +127,7 @@ export default function HighlightOverlay({
                 className={`absolute rounded-sm transition-all pointer-events-auto cursor-pointer ${
                   isSelected 
                     ? `${bgColorSelected} opacity-60` 
-                    : `${bgColor} opacity-40 hover:opacity-50`
+                    : `${bgColor} opacity-20 hover:opacity-30`
                 }`}
                 style={{
                   left: `${rect.x}px`,
