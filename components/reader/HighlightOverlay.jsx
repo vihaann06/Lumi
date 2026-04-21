@@ -111,6 +111,9 @@ export default function HighlightOverlay({
         if (isChatHighlight) {
           bgColor = 'bg-blue-100';
           bgColorSelected = 'bg-blue-200';
+        } else if (highlight.aiType === 'reference') {
+          bgColor = 'bg-emerald-100';
+          bgColorSelected = 'bg-emerald-200';
         } else if (highlight.aiType === 'summary') {
           bgColor = 'bg-purple-100';
           bgColorSelected = 'bg-purple-200';

@@ -56,6 +56,12 @@ export const chatWithAI = async (
     pageNumber?: number;
     totalPages?: number;
     fullDocumentText?: string;
+    references?: Array<{
+      label: string;
+      sourceDocTitle: string;
+      pageNumber: number | null;
+      selectedText: string;
+    }>;
   }
 ) => {
   const data = await postJSON('/api/ai/chat', {

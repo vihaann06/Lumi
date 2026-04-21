@@ -35,8 +35,17 @@ export async function POST(request: NextRequest) {
     const fullDocumentContextBlock = fullDocumentText
       ? `\n\nFull PDF text context:\n${fullDocumentText}`
       : '';
+    const references = Array.isArray(docContext?.references) ? docContext.references : [];
+    const referenceBlock = references.length
+      ? `\n\nAttached references from this workspace:\n${references
+          .map((ref: any) => {
+            const pageLabel = ref.pageNumber ? ` (p.${ref.pageNumber})` : '';
+            return `[${ref.label}] from "${ref.sourceDocTitle || 'Untitled source'}"${pageLabel}:\n"${ref.selectedText || ''}"`;
+          })
+          .join('\n\n')}`
+      : '';
 
-    const system = `You are a helpful AI assistant helping the user understand the following highlighted text from a PDF. Use this text as the primary context for all your responses:\n\n"${selectedText}"${docContextText}${fullDocumentContextBlock}\n\nAnswer questions clearly, stay grounded in the provided context, and say when more document context is needed. When the full PDF context is available, use it for disambiguation and better grounding while still prioritizing the selected highlight.`;
+    const system = `You are a helpful AI assistant helping the user understand the following highlighted text from a PDF. Use this text as the primary context for all your responses:\n\n"${selectedText}"${docContextText}${fullDocumentContextBlock}${referenceBlock}\n\nAnswer questions clearly, stay grounded in the provided context, and say when more document context is needed. When the full PDF context is available, use it for disambiguation and better grounding while still prioritizing the selected highlight. If attached references are provided, use them as additional evidence and cite them with their labels (for example, [R1]).`;
 
     const messages = [
       ...(Array.isArray(chatHistory)

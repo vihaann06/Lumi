@@ -58,10 +58,12 @@ export default function FolderPage() {
   const minSidebar = 220
   const maxSidebar = 480
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const pendingIframeMessageRef = useRef<any | null>(null)
 
   // Drag-and-drop reference attachment
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [attachFeedback, setAttachFeedback] = useState<string | null>(null)
+  const [selectedReferenceId, setSelectedReferenceId] = useState<string | null>(null)
 
   // Build iframe src
   const buildDocSrc = (docId: string, title: string, docType: string) => {
@@ -79,11 +81,44 @@ export default function FolderPage() {
     setActiveSrc(buildDocSrc(doc.id, doc.title || '', doc.doc_type || 'file'))
   }
 
-  const handleTraySelect = (reference: any) => {
+  const postMessageToIframe = useCallback((message: any) => {
     const win = iframeRef.current?.contentWindow
     if (win) {
-      win.postMessage({ type: 'reference:add-to-chat', reference }, '*')
+      win.postMessage(message, '*')
+      return true
     }
+    return false
+  }, [])
+
+  const handleGoToReference = (reference: any) => {
+    if (!reference) return
+    setSelectedReferenceId(reference.id)
+
+    const sourceDoc = documents.find((d) => d.id === reference.sourceDocId)
+    if (sourceDoc && sourceDoc.doc_type === 'pdf') {
+      const message = {
+        type: 'reference:navigate',
+        referenceId: reference.id,
+        pageNumber: reference.pageNumber,
+        selectedText: reference.selectedText,
+      }
+      if (activeDocId === sourceDoc.id) {
+        const delivered = postMessageToIframe(message)
+        if (!delivered) pendingIframeMessageRef.current = message
+      } else {
+        pendingIframeMessageRef.current = message
+        handleSelectDoc(sourceDoc.id)
+      }
+      return
+    }
+
+    postMessageToIframe({ type: 'reference:navigate', referenceId: reference.id })
+  }
+
+  const handleAddReference = (reference: any) => {
+    if (!reference) return
+    setSelectedReferenceId(reference.id)
+    postMessageToIframe({ type: 'reference:add-to-chat', reference })
   }
 
   // Auto-select first doc
@@ -101,11 +136,19 @@ export default function FolderPage() {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'reference:created') {
         refreshReferences()
+        return
+      }
+      if (event.data?.type === 'reference:focus' && event.data.referenceId) {
+        const targetId = String(event.data.referenceId)
+        setSelectedReferenceId(targetId)
+        if (!references.find((ref) => ref.id === targetId)) {
+          refreshReferences()
+        }
       }
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [refreshReferences])
+  }, [refreshReferences, references])
 
   // --- File operations ---
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -364,6 +407,13 @@ export default function FolderPage() {
                   ref={iframeRef}
                   key={activeSrc}
                   src={activeSrc}
+                  onLoad={() => {
+                    if (pendingIframeMessageRef.current) {
+                      const msg = pendingIframeMessageRef.current
+                      const delivered = postMessageToIframe(msg)
+                      if (delivered) pendingIframeMessageRef.current = null
+                    }
+                  }}
                   className="w-full h-full"
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
                   title="Document viewer"
@@ -382,7 +432,9 @@ export default function FolderPage() {
         references={references}
         isLoading={refsLoading}
         onRemove={removeReference}
-        onSelect={handleTraySelect}
+        onGoToReference={handleGoToReference}
+        onAddReference={handleAddReference}
+        selectedReferenceId={selectedReferenceId}
       />
 
       {/* Modals */}

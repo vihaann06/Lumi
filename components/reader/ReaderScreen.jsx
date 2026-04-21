@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -100,6 +100,7 @@ export default function ReaderScreen() {
   const { addReference } = useReferences(folderId);
   const { references: fileRefs, attach: attachToFile, detach: detachFromFile } = useFileReferences(docId);
   const [refSavedFlash, setRefSavedFlash] = useState(false);
+  const [pendingReferenceFocusId, setPendingReferenceFocusId] = useState(null);
 
   // Load persisted annotations + threads
   useEffect(() => {
@@ -184,7 +185,8 @@ export default function ReaderScreen() {
           aiType,
           aiContent: aiContent || chatHistory?.[0]?.content || null,
           chatHistory: chatHistory || [],
-          threadId
+          threadId,
+          referenceId: anchor.referenceId || null
         };
 
         if (!map[annotation.page]) map[annotation.page] = [];
@@ -205,6 +207,7 @@ export default function ReaderScreen() {
       aiType: highlight.aiType || null,
       aiContent: highlight.aiContent || null,
       chatHistory: highlight.chatHistory || [],
+      referenceId: highlight.referenceId || null,
       pageWidth: pageWidth || null
     };
 
@@ -399,10 +402,87 @@ export default function ReaderScreen() {
     return pdfContextPromiseRef.current;
   };
 
+  const focusReferenceHighlight = useCallback((referenceId, fallback = {}) => {
+    if (!referenceId) return false;
+
+    for (const [pageKey, pageHighlights] of Object.entries(highlights || {})) {
+      const target = (pageHighlights || []).find((h) => h.referenceId === referenceId);
+      if (target) {
+        const pageNum = Number(pageKey);
+        selectHighlight(pageNum, target.id);
+        setSelectedText(target.text || '');
+        setMenuPosition(null);
+
+        if (pdfContainerRef.current) {
+          const pageEl = pdfContainerRef.current.querySelector(`[data-page-number="${pageNum}"]`);
+          if (pageEl && typeof pageEl.scrollIntoView === 'function') {
+            pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+        return true;
+      }
+    }
+
+    const fallbackPage = Number(fallback.pageNumber || 0);
+    const fallbackText = (fallback.selectedText || '').trim();
+    if (fallbackPage && fallbackText) {
+      const pageHighlights = highlights[fallbackPage] || [];
+      const byText = pageHighlights.find(
+        (h) => h.aiType === 'reference' && (h.text || '').trim() === fallbackText
+      );
+      if (byText) {
+        selectHighlight(fallbackPage, byText.id);
+        setSelectedText(byText.text || '');
+        setMenuPosition(null);
+        const pageEl = pdfContainerRef.current?.querySelector(`[data-page-number="${fallbackPage}"]`);
+        if (pageEl && typeof pageEl.scrollIntoView === 'function') {
+          pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return true;
+      }
+    }
+
+    return false;
+  }, [highlights, pdfContainerRef, selectHighlight]);
+
   useEffect(() => {
     setPdfDocumentContext('');
     pdfContextPromiseRef.current = null;
   }, [docId, pdfFile]);
+
+  useEffect(() => {
+    const handleParentMessage = (event) => {
+      if (event.data?.type === 'reference:add-to-chat' && event.data.reference?.id) {
+        if (accountId) {
+          attachToFile(accountId, event.data.reference.id);
+          setRefSavedFlash(true);
+          setTimeout(() => setRefSavedFlash(false), 1200);
+        }
+        return;
+      }
+      if (event.data?.type === 'reference:navigate' && event.data.referenceId) {
+        const targetReferenceId = String(event.data.referenceId);
+        const focused = focusReferenceHighlight(targetReferenceId, {
+          pageNumber: event.data.pageNumber,
+          selectedText: event.data.selectedText,
+        });
+        if (!focused) {
+          setPendingReferenceFocusId(targetReferenceId);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleParentMessage);
+    return () => window.removeEventListener('message', handleParentMessage);
+  }, [focusReferenceHighlight, accountId, attachToFile]);
+
+  useEffect(() => {
+    if (!pendingReferenceFocusId) return;
+    const focused = focusReferenceHighlight(pendingReferenceFocusId);
+    if (focused) {
+      setPendingReferenceFocusId(null);
+    }
+  }, [pendingReferenceFocusId, highlights, focusReferenceHighlight]);
 
   // Handle text selection
   const handleTextSelection = (e) => {
@@ -463,6 +543,16 @@ export default function ReaderScreen() {
       
       const isChatHighlight = ['chat', 'explanation'].includes(highlight.aiType);
       if (isChatHighlight && isPanelCollapsed) setIsPanelCollapsed(false);
+
+      if (highlight.aiType === 'reference' && highlight.referenceId && typeof window !== 'undefined') {
+        window.parent?.postMessage(
+          {
+            type: 'reference:focus',
+            referenceId: highlight.referenceId,
+          },
+          '*'
+        );
+      }
     }
   };
 
@@ -537,6 +627,12 @@ export default function ReaderScreen() {
     setIsChatLoading(true);
     try {
       const fullDocumentText = await extractFullPdfContext();
+      const referenceContext = (fileRefs || []).map((ref, idx) => ({
+        label: `R${idx + 1}`,
+        sourceDocTitle: ref.sourceDocTitle || 'Untitled source',
+        pageNumber: ref.pageNumber || null,
+        selectedText: ref.selectedText || ''
+      }));
       const aiResponse = await chatWithAI(
         selectedHighlight.text,
         updatedChatHistory,
@@ -545,7 +641,8 @@ export default function ReaderScreen() {
           documentTitle: fileName,
           pageNumber: pageNum,
           totalPages: numPages,
-          fullDocumentText
+          fullDocumentText,
+          references: referenceContext
         }
       );
 
@@ -655,12 +752,68 @@ export default function ReaderScreen() {
       selectedText,
     });
     if (ref) {
+      let referenceHighlightMeta = null;
+      if (selectedRange) {
+        const highlightResult = addHighlight(selectedText, selectedRange, currentPageInView, 'reference', null);
+        if (highlightResult?.highlight) {
+          updateHighlight(highlightResult.pageNum, highlightResult.highlight.id, { referenceId: ref.id });
+          const persisted = await persistHighlight(highlightResult.pageNum, {
+            ...highlightResult.highlight,
+            referenceId: ref.id
+          });
+          const resolvedId = persisted?.annotationId || highlightResult.highlight.id;
+          updateHighlight(highlightResult.pageNum, resolvedId, { referenceId: ref.id });
+          referenceHighlightMeta = {
+            pageNum: highlightResult.pageNum,
+            highlightId: resolvedId
+          };
+
+          if (persisted?.annotationId && supabase) {
+            const target = (highlights[highlightResult.pageNum] || []).find(
+              (h) => h.id === resolvedId || h.annotationId === resolvedId
+            );
+            await supabase
+              .from('annotations')
+              .update({
+                anchor_json: {
+                  rects: target?.rects || highlightResult.highlight.rects || [],
+                  aiType: 'reference',
+                  aiContent: null,
+                  chatHistory: target?.chatHistory || [],
+                  referenceId: ref.id,
+                  pageWidth: pageWidth || null
+                }
+              })
+              .eq('id', persisted.annotationId);
+          }
+        }
+      }
+
       // Attach to the current document so it shows in this file's AI chat
       await attachToFile(accountId, ref.id);
       setRefSavedFlash(true);
       setTimeout(() => setRefSavedFlash(false), 2000);
+
+      if (typeof window !== 'undefined') {
+        window.parent?.postMessage(
+          {
+            type: 'reference:created',
+            reference: ref
+          },
+          '*'
+        );
+        window.parent?.postMessage(
+          {
+            type: 'reference:focus',
+            referenceId: ref.id,
+            highlight: referenceHighlightMeta
+          },
+          '*'
+        );
+      }
     }
     setMenuPosition(null);
+    setSelectedRange(null);
     window.getSelection().removeAllRanges();
   };
 
