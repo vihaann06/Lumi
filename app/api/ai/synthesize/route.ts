@@ -97,6 +97,7 @@ Rules:
 - Always return the FULL revised document as proposedContent.
 - Preserve the user's style unless instruction says otherwise.
 - Use references when relevant and do not invent facts.
+- When grounding a claim in a provided reference, cite inline with bracket labels like [R1], [R2], etc.
 - Keep improvements targeted to the instruction.
 
 User instruction:
@@ -134,7 +135,10 @@ ${instruction}`
     const content = await requestClaude({
       system: `${systemPrompt}${docContext}`,
       messages: (messages || [])
-        .filter((m) => m?.role === 'user' || m?.role === 'assistant')
+        .filter(
+          (m): m is { role: 'user' | 'assistant'; content: string } =>
+            m?.role === 'user' || m?.role === 'assistant'
+        )
         .map((m) => ({ role: m.role, content: m.content })),
       maxTokens: 1500,
       temperature: 0.7,

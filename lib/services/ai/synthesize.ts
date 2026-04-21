@@ -8,6 +8,7 @@ export interface SynthesisMessage {
 export interface EditProposal {
   summary: string
   proposedContent: string
+  referenceMentions?: ReferenceMention[]
 }
 
 export interface ReferenceContext {
@@ -18,6 +19,13 @@ export interface ReferenceContext {
   refLabel: string
 }
 
+export interface ReferenceMention {
+  referenceId: string
+  refLabel: string
+  citationCount: number
+  firstLine: number | null
+}
+
 export function refsToContext(refs: Reference[], indexOffset = 0): ReferenceContext[] {
   return refs.map((r, i) => ({
     id: r.id,
@@ -26,6 +34,52 @@ export function refsToContext(refs: Reference[], indexOffset = 0): ReferenceCont
     selectedText: r.selectedText,
     refLabel: `R${i + 1 + indexOffset}`,
   }))
+}
+
+export function extractReferenceMentions(
+  content: string,
+  references: ReferenceContext[]
+): ReferenceMention[] {
+  if (!content?.trim() || !references.length) return []
+
+  const refByLabel = new Map(
+    references.map((ref) => [ref.refLabel.toUpperCase(), ref])
+  )
+  const mentionByReference = new Map<string, ReferenceMention>()
+  const lines = content.split('\n')
+  const markerRegex = /\[(R\d+)\]/gi
+
+  lines.forEach((line, idx) => {
+    markerRegex.lastIndex = 0
+    let match: RegExpExecArray | null = markerRegex.exec(line)
+    while (match) {
+      const refLabel = String(match[1] || '').toUpperCase()
+      const mapped = refByLabel.get(refLabel)
+      if (mapped) {
+        const existing = mentionByReference.get(mapped.id)
+        if (existing) {
+          existing.citationCount += 1
+          if (existing.firstLine === null || idx + 1 < existing.firstLine) {
+            existing.firstLine = idx + 1
+          }
+        } else {
+          mentionByReference.set(mapped.id, {
+            referenceId: mapped.id,
+            refLabel,
+            citationCount: 1,
+            firstLine: idx + 1,
+          })
+        }
+      }
+      match = markerRegex.exec(line)
+    }
+  })
+
+  return Array.from(mentionByReference.values()).sort((a, b) => {
+    const aLine = a.firstLine ?? Number.MAX_SAFE_INTEGER
+    const bLine = b.firstLine ?? Number.MAX_SAFE_INTEGER
+    return aLine - bLine
+  })
 }
 
 export async function synthesizeChat(

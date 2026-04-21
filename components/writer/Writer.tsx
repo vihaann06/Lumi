@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, Link, Image, Minus, Plus, ChevronDown, Printer, Undo, Redo, PaintBucket, Type, Highlighter, MoreVertical } from 'lucide-react'
 import type { EditProposal } from '@/lib/services/ai/synthesize'
+import type { Reference } from '@/lib/types/references'
+import type { SynthesisReferenceMention } from '@/lib/db/queries/synthesisReferenceLinks'
 
 type WriterProps = {
   fileName: string
@@ -11,6 +13,10 @@ type WriterProps = {
   pendingEditProposal: EditProposal | null
   onApprovePendingEdit: () => void
   onRejectPendingEdit: () => void
+  citationMentions: SynthesisReferenceMention[]
+  referenceLookup: Reference[]
+  focusedReferenceId: string | null
+  onGoToSourceReference: (referenceId: string) => void
 }
 
 type LineOp = {
@@ -28,6 +34,24 @@ type TokenDiff = {
 type TokenOp = {
   type: 'unchanged' | 'added' | 'removed'
   token: string
+}
+
+type InlineCitationOccurrence = {
+  key: string
+  refLabel: string
+  referenceId: string
+}
+
+type InlineCitationSegment =
+  | { type: 'text'; text: string }
+  | { type: 'citation'; text: string; occurrence: InlineCitationOccurrence }
+
+type InlineCitationPosition = {
+  key: string
+  refLabel: string
+  referenceId: string
+  top: number
+  left: number
 }
 
 const splitLines = (text: string) => text.split('\n')
@@ -147,13 +171,19 @@ const getWordOps = (oldLine: string, newLine: string): TokenOp[] => {
   return ops.reverse()
 }
 
+const INLINE_CITATION_REGEX = /\[(R\d+)\]/gi
+
 export default function Writer({
   fileName,
   content,
   onChangeContent,
   pendingEditProposal,
   onApprovePendingEdit,
-  onRejectPendingEdit
+  onRejectPendingEdit,
+  citationMentions,
+  referenceLookup,
+  focusedReferenceId,
+  onGoToSourceReference,
 }: WriterProps) {
   const [zoom, setZoom] = useState(100)
   const [font, setFont] = useState('Arial')
@@ -162,6 +192,121 @@ export default function Writer({
   const fonts = ['Arial', 'Calibri', 'Comic Sans MS', 'Courier New', 'Georgia', 'Times New Roman', 'Trebuchet MS', 'Verdana']
   const fontSizes = ['8', '9', '10', '11', '12', '14', '18', '24', '30', '36']
   const lineOps = pendingEditProposal ? getLineDiffOps(content || '', pendingEditProposal.proposedContent || '') : []
+
+  const referenceById = new Map(referenceLookup.map((ref) => [ref.id, ref]))
+  const mentionByReferenceId = useMemo(
+    () => new Map(citationMentions.map((m) => [m.referenceId, m])),
+    [citationMentions]
+  )
+  const labelToReferenceId = useMemo(() => {
+    const map = new Map<string, string>()
+    citationMentions.forEach((mention) => {
+      map.set(mention.refLabel.toUpperCase(), mention.referenceId)
+    })
+    return map
+  }, [citationMentions])
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const mirrorRef = useRef<HTMLDivElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [scrollLeft, setScrollLeft] = useState(0)
+  const [inlineCitationPositions, setInlineCitationPositions] = useState<InlineCitationPosition[]>([])
+
+  const inlineCitationModel = useMemo(() => {
+    if (!content || labelToReferenceId.size === 0) {
+      return { segments: [{ type: 'text', text: content || '' } as InlineCitationSegment], occurrences: [] as InlineCitationOccurrence[] }
+    }
+
+    const segments: InlineCitationSegment[] = []
+    const occurrences: InlineCitationOccurrence[] = []
+    let lastIndex = 0
+    let localCounter = 0
+
+    INLINE_CITATION_REGEX.lastIndex = 0
+    let match: RegExpExecArray | null = INLINE_CITATION_REGEX.exec(content)
+
+    while (match) {
+      const fullToken = match[0]
+      const labelRaw = String(match[1] || '').toUpperCase()
+      const mappedReferenceId = labelToReferenceId.get(labelRaw)
+      const start = match.index
+      const end = start + fullToken.length
+
+      if (start > lastIndex) {
+        segments.push({ type: 'text', text: content.slice(lastIndex, start) })
+      }
+
+      if (mappedReferenceId) {
+        const occurrence: InlineCitationOccurrence = {
+          key: `${mappedReferenceId}-${localCounter}`,
+          refLabel: labelRaw,
+          referenceId: mappedReferenceId,
+        }
+        occurrences.push(occurrence)
+        segments.push({ type: 'citation', text: fullToken, occurrence })
+        localCounter += 1
+      } else {
+        segments.push({ type: 'text', text: fullToken })
+      }
+
+      lastIndex = end
+      match = INLINE_CITATION_REGEX.exec(content)
+    }
+
+    if (lastIndex < content.length) {
+      segments.push({ type: 'text', text: content.slice(lastIndex) })
+    }
+
+    return { segments, occurrences }
+  }, [content, labelToReferenceId])
+
+  useEffect(() => {
+    const textareaEl = textareaRef.current
+    const mirrorEl = mirrorRef.current
+    if (!textareaEl || !mirrorEl) {
+      setInlineCitationPositions([])
+      return
+    }
+
+    const nextPositions: InlineCitationPosition[] = inlineCitationModel.occurrences
+      .map((occurrence) => {
+        const markerEl = mirrorEl.querySelector(
+          `[data-inline-citation-key="${occurrence.key}"]`
+        ) as HTMLSpanElement | null
+        if (!markerEl) return null
+        return {
+          key: occurrence.key,
+          refLabel: occurrence.refLabel,
+          referenceId: occurrence.referenceId,
+          top: markerEl.offsetTop - scrollTop,
+          left: markerEl.offsetLeft + markerEl.offsetWidth + 6 - scrollLeft,
+        }
+      })
+      .filter((item): item is InlineCitationPosition => Boolean(item))
+
+    setInlineCitationPositions(nextPositions)
+  }, [inlineCitationModel, scrollTop, scrollLeft, font, fontSize, zoom])
+
+  useEffect(() => {
+    const textareaEl = textareaRef.current
+    if (!textareaEl) return
+    const handleScroll = () => {
+      setScrollTop(textareaEl.scrollTop)
+      setScrollLeft(textareaEl.scrollLeft)
+    }
+    textareaEl.addEventListener('scroll', handleScroll)
+    return () => textareaEl.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  useEffect(() => {
+    const textareaEl = textareaRef.current
+    if (!textareaEl || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      setScrollTop((prev) => prev)
+      setScrollLeft((prev) => prev)
+    })
+    observer.observe(textareaEl)
+    return () => observer.disconnect()
+  }, [])
 
   const renderInlineWordOps = (ops: TokenOp[]) => (
     <span className="whitespace-pre-wrap">
@@ -449,17 +594,73 @@ export default function Writer({
               </div>
             </div>
           ) : (
-            <textarea
-              value={content}
-              onChange={(e) => onChangeContent(e.target.value)}
-              placeholder="Start typing..."
-              className="w-full min-h-[1056px] resize-none outline-none text-gray-900 leading-relaxed"
-              style={{
-                fontFamily: font,
-                fontSize: `${fontSize}pt`,
-                lineHeight: '1.5'
-              }}
-            />
+            <div className="relative min-h-[1056px]">
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => onChangeContent(e.target.value)}
+                placeholder="Start typing..."
+                className="w-full min-h-[1056px] resize-none outline-none text-gray-900 leading-relaxed p-0"
+                style={{
+                  fontFamily: font,
+                  fontSize: `${fontSize}pt`,
+                  lineHeight: '1.5'
+                }}
+              />
+              {inlineCitationModel.occurrences.length > 0 && (
+                <>
+                  <div
+                    ref={mirrorRef}
+                    aria-hidden="true"
+                    className="absolute inset-0 invisible whitespace-pre-wrap break-words overflow-hidden pointer-events-none"
+                    style={{
+                      fontFamily: font,
+                      fontSize: `${fontSize}pt`,
+                      lineHeight: '1.5',
+                      padding: 0,
+                    }}
+                  >
+                    {inlineCitationModel.segments.map((segment, idx) => {
+                      if (segment.type === 'text') return <React.Fragment key={`txt-${idx}`}>{segment.text}</React.Fragment>
+                      return (
+                        <span
+                          key={segment.occurrence.key}
+                          data-inline-citation-key={segment.occurrence.key}
+                        >
+                          {segment.text}
+                        </span>
+                      )
+                    })}
+                  </div>
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                    {inlineCitationPositions.map((chip) => {
+                      const ref = referenceById.get(chip.referenceId)
+                      const mention = mentionByReferenceId.get(chip.referenceId)
+                      const isFocused = focusedReferenceId === chip.referenceId
+                      return (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          className={`group pointer-events-auto absolute flex max-w-[22px] items-center overflow-hidden rounded-full border px-2 py-1 text-[10px] font-semibold transition-all duration-200 hover:max-w-[210px] hover:shadow-sm ${
+                            isFocused
+                              ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                              : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300'
+                          }`}
+                          style={{ top: chip.top, left: chip.left }}
+                          onClick={() => onGoToSourceReference(chip.referenceId)}
+                          title="Go to referenced source highlight"
+                        >
+                          <span className="whitespace-nowrap">{chip.refLabel}</span>
+                          <span className="ml-1.5 hidden whitespace-nowrap text-[10px] font-medium text-slate-600 group-hover:inline">
+                            {(ref?.sourceDocTitle || 'Source')}{ref?.pageNumber ? ` p.${ref.pageNumber}` : ''} • x{mention?.citationCount || 1}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

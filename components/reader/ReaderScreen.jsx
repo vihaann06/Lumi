@@ -15,6 +15,7 @@ import { useFileReferences } from '@/hooks/useFileReferences';
 // Services
 import { chatWithAI } from '@/lib/services/ai/actions';
 import { getSupabaseClient } from '@/lib/db/supabaseClient';
+import { listSynthesisUsageForReferenceIds } from '@/lib/db/queries/synthesisReferenceLinks';
 
 // Components
 import PDFViewer from '../../components/reader/PDFViewer';
@@ -101,6 +102,22 @@ export default function ReaderScreen() {
   const { references: fileRefs, attach: attachToFile, detach: detachFromFile } = useFileReferences(docId);
   const [refSavedFlash, setRefSavedFlash] = useState(false);
   const [pendingReferenceFocusId, setPendingReferenceFocusId] = useState(null);
+  const [synthesisUsageByRef, setSynthesisUsageByRef] = useState({});
+
+  useEffect(() => {
+    const loadUsage = async () => {
+      if (!supabase || !fileRefs.length) {
+        setSynthesisUsageByRef({})
+        return
+      }
+      const usage = await listSynthesisUsageForReferenceIds(
+        supabase,
+        fileRefs.map((ref) => ref.id)
+      )
+      if (isMountedRef.current) setSynthesisUsageByRef(usage)
+    }
+    loadUsage()
+  }, [supabase, fileRefs])
 
   // Load persisted annotations + threads
   useEffect(() => {
@@ -997,7 +1014,7 @@ export default function ReaderScreen() {
                       {fileRefs.map((ref, idx) => (
                         <div
                           key={ref.id}
-                          className="flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
+                          className="group flex items-start gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:shadow-sm transition-all"
                           draggable
                           onDragStart={(e) => {
                             e.dataTransfer.setData('application/lumi-reference', JSON.stringify(ref));
@@ -1014,6 +1031,33 @@ export default function ReaderScreen() {
                             <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
                               &ldquo;{ref.selectedText}&rdquo;
                             </p>
+                            {synthesisUsageByRef?.[ref.id]?.count > 0 && (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                  Used in {synthesisUsageByRef[ref.id].count} {synthesisUsageByRef[ref.id].count === 1 ? 'synthesis' : 'syntheses'}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="text-[10px] px-2 py-0.5 rounded-md border border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const target = synthesisUsageByRef?.[ref.id]?.syntheses?.[0];
+                                    if (!target?.synthesisDocId) return;
+                                    window.parent.postMessage(
+                                      {
+                                        type: 'synthesis:navigate',
+                                        synthesisDocId: target.synthesisDocId,
+                                        referenceId: ref.id,
+                                      },
+                                      '*'
+                                    );
+                                  }}
+                                >
+                                  Go to synthesis
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <button
                             type="button"

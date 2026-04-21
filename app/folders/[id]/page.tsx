@@ -138,6 +138,33 @@ export default function FolderPage() {
         refreshReferences()
         return
       }
+      if (event.data?.type === 'reference:go-to-source' && event.data.referenceId) {
+        const targetId = String(event.data.referenceId)
+        const ref = references.find((r) => r.id === targetId)
+        if (ref) {
+          handleGoToReference(ref)
+        } else {
+          refreshReferences()
+        }
+        return
+      }
+      if (event.data?.type === 'synthesis:navigate' && event.data.synthesisDocId) {
+        const synthesisDocId = String(event.data.synthesisDocId)
+        const referenceId = event.data.referenceId ? String(event.data.referenceId) : null
+        const msg = referenceId
+          ? { type: 'synthesis:focus-reference', referenceId }
+          : null
+        if (activeDocId === synthesisDocId) {
+          if (msg) {
+            const delivered = postMessageToIframe(msg)
+            if (!delivered) pendingIframeMessageRef.current = msg
+          }
+        } else {
+          pendingIframeMessageRef.current = msg
+          handleSelectDoc(synthesisDocId)
+        }
+        return
+      }
       if (event.data?.type === 'reference:focus' && event.data.referenceId) {
         const targetId = String(event.data.referenceId)
         setSelectedReferenceId(targetId)
@@ -148,7 +175,7 @@ export default function FolderPage() {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [refreshReferences, references])
+  }, [refreshReferences, references, activeDocId, postMessageToIframe])
 
   // --- File operations ---
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {

@@ -9,6 +9,11 @@ import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useFileReferences } from '@/hooks/useFileReferences'
 import type { Reference } from '@/lib/types/references'
 import type { EditProposal } from '@/lib/services/ai/synthesize'
+import {
+  listSynthesisReferenceMentionsForDocument,
+  syncSynthesisReferenceMentions,
+  type SynthesisReferenceMention,
+} from '@/lib/db/queries/synthesisReferenceLinks'
 
 export default function FolderWritePage() {
   return (
@@ -40,6 +45,8 @@ function FolderWriteContent() {
   const supabase = getSupabaseClient()
   const [accountId, setAccountId] = useState<string | null>(null)
   const [extraRefs, setExtraRefs] = useState<Reference[]>([])
+  const [citationMentions, setCitationMentions] = useState<SynthesisReferenceMention[]>([])
+  const [focusedReferenceId, setFocusedReferenceId] = useState<string | null>(null)
   const hasLocalEditsRef = useRef(false)
   const saveInFlightRef = useRef(false)
   const queuedContentRef = useRef<string | null>(null)
@@ -148,6 +155,18 @@ function FolderWriteContent() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId])
+
+  useEffect(() => {
+    const loadMentions = async () => {
+      if (!supabase || !docId) {
+        setCitationMentions([])
+        return
+      }
+      const mentions = await listSynthesisReferenceMentionsForDocument(supabase, docId)
+      setCitationMentions(mentions)
+    }
+    loadMentions()
+  }, [supabase, docId])
 
   // Auth for attaching references
   useEffect(() => {
@@ -331,8 +350,23 @@ function FolderWriteContent() {
 
   const handleApproveEdit = () => {
     if (!pendingEditProposal?.proposedContent) return
+    const nextMentions = pendingEditProposal.referenceMentions ?? []
     hasLocalEditsRef.current = true
     setContent(pendingEditProposal.proposedContent)
+    setCitationMentions(nextMentions)
+    if (supabase && docId && folderId && accountId) {
+      void syncSynthesisReferenceMentions(supabase, {
+        accountId,
+        folderId,
+        synthesisDocId: docId,
+        mentions: nextMentions,
+      }).then((ok) => {
+        if (!ok) return
+        void listSynthesisReferenceMentionsForDocument(supabase, docId).then((mentions) => {
+          setCitationMentions(mentions)
+        })
+      })
+    }
     setPendingEditProposal(null)
   }
 
@@ -343,6 +377,24 @@ function FolderWriteContent() {
   const handleContentChange = useCallback((next: string) => {
     hasLocalEditsRef.current = true
     setContent(next)
+  }, [])
+
+  const handleGoToSourceReference = useCallback((referenceId: string) => {
+    if (!referenceId) return
+    window.parent.postMessage({ type: 'reference:go-to-source', referenceId }, '*')
+    window.parent.postMessage({ type: 'reference:focus', referenceId }, '*')
+  }, [])
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'synthesis:focus-reference' && event.data.referenceId) {
+        const targetId = String(event.data.referenceId)
+        setFocusedReferenceId(targetId)
+        window.parent.postMessage({ type: 'reference:focus', referenceId: targetId }, '*')
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
   }, [])
 
   return (
@@ -378,6 +430,10 @@ function FolderWriteContent() {
             pendingEditProposal={pendingEditProposal}
             onApprovePendingEdit={handleApproveEdit}
             onRejectPendingEdit={handleRejectEdit}
+            citationMentions={citationMentions}
+            referenceLookup={activeRefs}
+            focusedReferenceId={focusedReferenceId}
+            onGoToSourceReference={handleGoToSourceReference}
           />
         </div>
 

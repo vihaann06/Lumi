@@ -14,6 +14,7 @@ import {
   synthesizeChat,
   synthesizeEditProposal,
   refsToContext,
+  extractReferenceMentions,
   type SynthesisMessage,
   type EditProposal,
 } from '@/lib/services/ai/synthesize'
@@ -86,6 +87,7 @@ export default function WritingAIPanel({
     try {
       const refCtx = refsToContext(activeRefs)
       const proposal = await synthesizeEditProposal(trimmed, refCtx, documentContent)
+      proposal.referenceMentions = extractReferenceMentions(proposal.proposedContent, refCtx)
       onProposeEdit(proposal)
       setMessages((prev) => [
         ...prev,
