@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState, useCallback } from 'react'
+import { Suspense, useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Writer from '../../../../components/writer/Writer'
@@ -40,6 +40,18 @@ function FolderWriteContent() {
   const supabase = getSupabaseClient()
   const [accountId, setAccountId] = useState<string | null>(null)
   const [extraRefs, setExtraRefs] = useState<Reference[]>([])
+  const hasLocalEditsRef = useRef(false)
+  const saveInFlightRef = useRef(false)
+  const queuedContentRef = useRef<string | null>(null)
+  const [writerDocMeta, setWriterDocMeta] = useState<{
+    workspaceId: string | null
+    accountId: string | null
+  }>({ workspaceId: null, accountId: null })
+  const [writerStorageMeta, setWriterStorageMeta] = useState<{
+    bucket: string | null
+    path: string | null
+  }>({ bucket: null, path: null })
+  const retryTimerRef = useRef<number | null>(null)
 
   // File-scoped references: only refs attached to this specific document
   const { references: fileRefs, detach: detachRef, attach: attachRef } = useFileReferences(docId || null)
@@ -48,23 +60,89 @@ function FolderWriteContent() {
   useEffect(() => {
     const load = async () => {
       if (!supabase || !docId) return
-      const { data } = await supabase
+      const { data: docRow, error: docError } = await supabase
+        .from('documents')
+        .select('title, workspace_id, account_id, file_bucket, file_path')
+        .eq('id', docId)
+        .maybeSingle()
+      if (docError) {
+        console.error('Failed loading writer doc row', docError)
+      }
+
+      if (docRow?.title) {
+        setFileName(docRow.title)
+      }
+      if (docRow) {
+        setWriterDocMeta({
+          workspaceId: (docRow as any).workspace_id ?? null,
+          accountId: (docRow as any).account_id ?? null,
+        })
+        setWriterStorageMeta({
+          bucket: (docRow as any).file_bucket ?? null,
+          path: (docRow as any).file_path ?? null,
+        })
+      }
+
+      let didLoadContent = false
+      const writerBucket = (docRow as any)?.file_bucket
+      const writerPath = (docRow as any)?.file_path
+      if (writerBucket && writerPath) {
+        const { data: writerBlob, error: writerDownloadError } = await supabase.storage
+          .from(writerBucket)
+          .download(writerPath)
+
+        if (writerDownloadError) {
+          // New writer docs can legitimately have no blob yet.
+        } else if (writerBlob) {
+          try {
+            const raw = await writerBlob.text()
+            let parsedContent: string | null = null
+            try {
+              const parsed = JSON.parse(raw)
+              if (typeof parsed?.content === 'string') parsedContent = parsed.content
+            } catch {
+              parsedContent = raw
+            }
+            if (typeof parsedContent === 'string' && !hasLocalEditsRef.current) {
+              setContent(parsedContent)
+              didLoadContent = true
+            }
+          } catch (parseError) {
+            console.error('Failed parsing writer content blob', parseError)
+          }
+        }
+      }
+
+      if (didLoadContent) return
+
+      const { data: assetRow, error: assetError } = await supabase
         .from('document_assets')
-        .select('content_json')
+        .select('bucket, path')
         .eq('doc_id', docId)
         .eq('kind', 'metadata_json')
         .maybeSingle()
-      if (data?.content_json?.content) {
-        setContent(data.content_json.content as string)
+      if (assetError) {
+        console.error('Failed loading writer metadata asset row', assetError)
       }
 
-      const doc = await supabase
-        .from('documents')
-        .select('title')
-        .eq('id', docId)
-        .maybeSingle()
-      if (doc.data?.title) {
-        setFileName(doc.data.title)
+      if (assetRow?.bucket && assetRow?.path) {
+        const { data: fileBlob, error: downloadError } = await supabase.storage
+          .from(assetRow.bucket)
+          .download(assetRow.path)
+
+        if (downloadError) {
+          console.error('Failed loading writer content blob', downloadError)
+        } else if (fileBlob) {
+          try {
+            const raw = await fileBlob.text()
+            const parsed = JSON.parse(raw)
+            if (typeof parsed?.content === 'string' && !hasLocalEditsRef.current) {
+              setContent(parsed.content)
+            }
+          } catch (parseError) {
+            console.error('Failed parsing writer content blob', parseError)
+          }
+        }
       }
     }
     load()
@@ -87,21 +165,101 @@ function FolderWriteContent() {
     }
   }, [supabase])
 
-  // Save content (debounced)
-  useEffect(() => {
-    if (!supabase || !docId) return
-    const timer = setTimeout(async () => {
-      await supabase.from('document_assets').upsert({
-        doc_id: docId,
-        workspace_id: null,
-        kind: 'metadata_json',
-        bucket: 'documents',
-        path: `docs/${docId}.json`,
-        content_json: { content },
+  const persistWriterContent = useCallback(async (snapshot: string) => {
+    if (
+      !supabase ||
+      !docId ||
+      !accountId ||
+      !writerDocMeta.workspaceId ||
+      !writerDocMeta.accountId ||
+      !writerStorageMeta.bucket ||
+      !writerStorageMeta.path
+    ) return false
+
+    const payload = new Blob([snapshot], { type: 'text/plain;charset=utf-8' })
+
+    const { error: uploadError } = await supabase.storage
+      .from(writerStorageMeta.bucket)
+      .upload(writerStorageMeta.path, payload, {
+        upsert: true,
+        contentType: 'text/plain',
+        cacheControl: '3600',
       })
+    if (uploadError) {
+      console.error('Failed uploading writer content blob', uploadError)
+      return false
+    }
+
+    const { error } = await supabase
+      .from('documents')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', docId)
+    if (error) {
+      console.error('Failed saving writer content', error)
+      return false
+    }
+    return true
+  }, [
+    supabase,
+    docId,
+    accountId,
+    writerDocMeta.workspaceId,
+    writerDocMeta.accountId,
+    writerStorageMeta.bucket,
+    writerStorageMeta.path,
+  ])
+
+  const flushSaveQueue = useCallback(async () => {
+    if (saveInFlightRef.current) return
+    saveInFlightRef.current = true
+    try {
+      while (queuedContentRef.current !== null) {
+        const snapshot = queuedContentRef.current
+        queuedContentRef.current = null
+        const saved = await persistWriterContent(snapshot)
+        if (!saved) {
+          if (queuedContentRef.current === null) queuedContentRef.current = snapshot
+          if (retryTimerRef.current) {
+            window.clearTimeout(retryTimerRef.current)
+          }
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null
+            void flushSaveQueue()
+          }, 1500)
+          break
+        }
+      }
+    } finally {
+      saveInFlightRef.current = false
+    }
+  }, [persistWriterContent])
+
+  const queueWriterSave = useCallback((snapshot: string) => {
+    queuedContentRef.current = snapshot
+    void flushSaveQueue()
+  }, [flushSaveQueue])
+
+  // Save content (debounced + serialized to avoid out-of-order overwrites)
+  useEffect(() => {
+    if (!hasLocalEditsRef.current) return
+    const timer = setTimeout(() => {
+      queueWriterSave(content)
     }, 600)
     return () => clearTimeout(timer)
-  }, [content, docId, supabase])
+  }, [content, queueWriterSave])
+
+  // If doc metadata arrives after edits started, flush latest queued save.
+  useEffect(() => {
+    if (!hasLocalEditsRef.current) return
+    queueWriterSave(content)
+  }, [
+    writerDocMeta.workspaceId,
+    writerDocMeta.accountId,
+    writerStorageMeta.bucket,
+    writerStorageMeta.path,
+    accountId,
+    queueWriterSave,
+  ])
 
   const activeRefs = useMemo(() => {
     const seen = new Set<string>()
@@ -173,6 +331,7 @@ function FolderWriteContent() {
 
   const handleApproveEdit = () => {
     if (!pendingEditProposal?.proposedContent) return
+    hasLocalEditsRef.current = true
     setContent(pendingEditProposal.proposedContent)
     setPendingEditProposal(null)
   }
@@ -181,15 +340,10 @@ function FolderWriteContent() {
     setPendingEditProposal(null)
   }
 
-  useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'reference:add-to-chat' && event.data.reference) {
-        addActiveRef(event.data.reference as Reference)
-      }
-    }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
-  }, [addActiveRef])
+  const handleContentChange = useCallback((next: string) => {
+    hasLocalEditsRef.current = true
+    setContent(next)
+  }, [])
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
@@ -220,7 +374,7 @@ function FolderWriteContent() {
           <Writer
             fileName={fileName || 'Untitled'}
             content={content}
-            onChangeContent={setContent}
+            onChangeContent={handleContentChange}
             pendingEditProposal={pendingEditProposal}
             onApprovePendingEdit={handleApproveEdit}
             onRejectPendingEdit={handleRejectEdit}
