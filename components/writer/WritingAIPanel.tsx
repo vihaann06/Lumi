@@ -33,6 +33,7 @@ type WritingAIPanelProps = {
   isCollapsed: boolean
   onToggleCollapse: () => void
   externalEvent?: { id: string; message: SynthesisMessage } | null
+  externalLoading?: boolean
 }
 
 export default function WritingAIPanel({
@@ -44,6 +45,7 @@ export default function WritingAIPanel({
   isCollapsed,
   onToggleCollapse,
   externalEvent,
+  externalLoading = false,
 }: WritingAIPanelProps) {
   const [messages, setMessages] = useState<SynthesisMessage[]>([])
   const [mode, setMode] = useState<'ask' | 'edit'>('ask')
@@ -271,10 +273,10 @@ export default function WritingAIPanel({
             )}
           </div>
         ))}
-        {isLoading && (
+        {(isLoading || externalLoading) && (
           <div className="flex items-center gap-2 text-sm text-slate-400 bg-slate-50 rounded-lg p-3">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Synthesizing...</span>
+            <span>{externalLoading ? 'Working on selection action...' : 'Synthesizing...'}</span>
           </div>
         )}
         <div ref={messagesEndRef} />

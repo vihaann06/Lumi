@@ -76,6 +76,7 @@ function FolderWriteContent() {
     id: string
     message: SynthesisMessage
   } | null>(null)
+  const [isSelectionActionLoading, setIsSelectionActionLoading] = useState(false)
   const hasLocalEditsRef = useRef(false)
   const saveInFlightRef = useRef(false)
   const queuedContentRef = useRef<string | null>(null)
@@ -575,7 +576,10 @@ function FolderWriteContent() {
     }) => {
       if (!writerSelection || !writerSelection.text?.trim()) return
       setPendingDroppedReference(reference)
-      setSelectionActionMenuPosition(position)
+      setSelectionActionMenuPosition({
+        x: position.x,
+        y: Math.max(52, position.y - 36),
+      })
       addActiveRef(reference)
     },
     [writerSelection, addActiveRef]
@@ -628,6 +632,7 @@ function FolderWriteContent() {
         return
       }
 
+      setIsSelectionActionLoading(true)
       try {
         const refCtx = refsToContext([ref])
         const result = await synthesizeWriterSpanAction({
@@ -670,6 +675,8 @@ function FolderWriteContent() {
           role: 'assistant',
           content: `Error: ${error?.message || 'Failed to process selection action.'}`,
         })
+      } finally {
+        setIsSelectionActionLoading(false)
       }
     },
     [
@@ -841,6 +848,7 @@ function FolderWriteContent() {
             isCollapsed={panelCollapsed}
             onToggleCollapse={() => setPanelCollapsed(!panelCollapsed)}
             externalEvent={externalPanelEvent}
+            externalLoading={isSelectionActionLoading}
           />
         </div>
       </div>

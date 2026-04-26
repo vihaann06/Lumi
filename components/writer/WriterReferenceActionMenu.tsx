@@ -52,17 +52,17 @@ export default function WriterReferenceActionMenu({
   return (
     <div
       ref={rootRef}
-      className="absolute z-[220] w-[320px] bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-slate-200 p-2"
+      className="absolute z-[220] w-[560px] max-w-[96%] bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-slate-200 p-2"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
-        transform: 'translate(-50%, calc(-100% - 10px))',
+        transform: 'translate(-50%, calc(-100% - 34px))',
       }}
     >
       <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-slate-400 px-2 pb-1">
         Attach reference
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
         {actions.map((action) => {
           const Icon = action.icon
           return (
@@ -70,10 +70,10 @@ export default function WriterReferenceActionMenu({
               key={action.id}
               type="button"
               onClick={() => onSelectAction(action.id)}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              className="h-14 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-700 hover:bg-slate-50 text-center min-w-0"
             >
-              <Icon className="w-4 h-4 text-indigo-500" />
-              <span>{action.label}</span>
+              <Icon className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+              <span className="leading-tight break-words whitespace-normal">{action.label}</span>
             </button>
           )
         })}
