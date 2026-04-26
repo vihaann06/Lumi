@@ -18,6 +18,8 @@ type WriterProps = {
   focusedReferenceId: string | null
   onGoToSourceReference: (referenceId: string) => void
   onSelectionChange: (selection: { start: number; end: number; text: string } | null) => void
+  activeSelection: { start: number; end: number; text: string } | null
+  hasActiveSelection: boolean
   onDropReferenceOnSelection: (payload: {
     reference: Reference
     position: { x: number; y: number }
@@ -192,6 +194,8 @@ export default function Writer({
   focusedReferenceId,
   onGoToSourceReference,
   onSelectionChange,
+  activeSelection,
+  hasActiveSelection,
   onDropReferenceOnSelection,
 }: WriterProps) {
   const [zoom, setZoom] = useState(100)
@@ -220,7 +224,6 @@ export default function Writer({
   const [scrollTop, setScrollTop] = useState(0)
   const [scrollLeft, setScrollLeft] = useState(0)
   const [inlineCitationPositions, setInlineCitationPositions] = useState<InlineCitationPosition[]>([])
-  const [isSelectionDropActive, setIsSelectionDropActive] = useState(false)
   const MIN_EDITOR_HEIGHT = 1056
 
   useEffect(() => {
@@ -328,6 +331,15 @@ export default function Writer({
     } else {
       onSelectionChange(null)
     }
+  }
+
+  const restoreActiveSelection = () => {
+    const textareaEl = textareaRef.current
+    if (!textareaEl || !activeSelection || !hasActiveSelection) return
+    const start = Math.max(0, Math.min(activeSelection.start, content.length))
+    const end = Math.max(start, Math.min(activeSelection.end, content.length))
+    textareaEl.focus({ preventScroll: true })
+    textareaEl.setSelectionRange(start, end)
   }
 
   useEffect(() => {
@@ -636,31 +648,24 @@ export default function Writer({
                 onKeyUp={updateSelection}
                 onMouseUp={updateSelection}
                 placeholder="Start typing..."
-                className={`w-full min-h-[1056px] resize-none overflow-hidden outline-none text-gray-900 leading-relaxed p-0 ${
-                  isSelectionDropActive ? 'ring-2 ring-indigo-300 rounded-sm' : ''
-                }`}
+                className="w-full min-h-[1056px] resize-none overflow-hidden outline-none text-gray-900 leading-relaxed p-0"
                 style={{
                   fontFamily: font,
                   fontSize: `${fontSize}pt`,
                   lineHeight: '1.5'
                 }}
                 onDragOver={(e) => {
-                  const hasSelection = (textareaRef.current?.selectionEnd || 0) > (textareaRef.current?.selectionStart || 0)
-                  if (!hasSelection) return
+                  if (!hasActiveSelection) return
                   if (!Array.from(e.dataTransfer.types || []).includes('application/lumi-reference')) return
                   e.preventDefault()
                   e.dataTransfer.dropEffect = 'copy'
-                  setIsSelectionDropActive(true)
-                }}
-                onDragLeave={() => {
-                  setIsSelectionDropActive(false)
+                  restoreActiveSelection()
                 }}
                 onDrop={(e) => {
-                  setIsSelectionDropActive(false)
-                  const hasSelection = (textareaRef.current?.selectionEnd || 0) > (textareaRef.current?.selectionStart || 0)
-                  if (!hasSelection) return
+                  if (!hasActiveSelection) return
                   if (!Array.from(e.dataTransfer.types || []).includes('application/lumi-reference')) return
                   e.preventDefault()
+                  restoreActiveSelection()
                   const raw = e.dataTransfer.getData('application/lumi-reference')
                   if (!raw) return
                   try {

@@ -783,6 +783,8 @@ function FolderWriteContent() {
               focusedReferenceId={focusedReferenceId}
               onGoToSourceReference={handleGoToSourceReference}
               onSelectionChange={setWriterSelection}
+              activeSelection={writerSelection}
+              hasActiveSelection={Boolean(writerSelection?.text?.trim())}
               onDropReferenceOnSelection={handleDropReferenceOnSelection}
             />
             <WriterReferenceActionMenu
