@@ -14,6 +14,7 @@ import { useFileReferences } from '@/hooks/useFileReferences';
 
 // Services
 import { chatWithAI } from '@/lib/services/ai/openaiService';
+import { crossSourceWithAI, CROSS_SOURCE_ACTION_LABELS } from '@/lib/services/ai/crossSource';
 import { getSupabaseClient } from '@/lib/db/supabaseClient';
 import { listSynthesisUsageForReferenceIds } from '@/lib/db/queries/synthesisReferenceLinks';
 
@@ -22,6 +23,7 @@ import PDFViewer from '../../components/reader/PDFViewer';
 import SelectionMenu from '../../components/reader/SelectionMenu';
 import ExplanationPanel from '../../components/reader/ExplanationPanel';
 import PageHighlights from '../../components/reader/PageHighlights';
+import CrossSourceMenu from '../../components/reader/CrossSourceMenu';
 import { Sparkles, BookmarkCheck } from 'lucide-react';
 
 // Set up PDF.js worker
@@ -106,6 +108,8 @@ export default function ReaderScreen() {
   const [pendingReferenceFocusId, setPendingReferenceFocusId] = useState(null);
   const [selectedReferenceUsages, setSelectedReferenceUsages] = useState([]);
   const [isLoadingSelectedReferenceUsages, setIsLoadingSelectedReferenceUsages] = useState(false);
+  const [crossSourceMenu, setCrossSourceMenu] = useState(null);
+  const [selectionDropRects, setSelectionDropRects] = useState([]);
 
   useEffect(() => {
     let cancelled = false
@@ -289,7 +293,38 @@ export default function ReaderScreen() {
         map[annotation.page].push(highlight);
       });
 
-      setHighlightsMap(map);
+      // Merge server refresh with local in-memory chat state so a late reload
+      // does not wipe freshly appended AI messages.
+      setHighlights((prev) => {
+        const localByAnnotationId = {};
+        Object.values(prev || {}).forEach((pageHighlights) => {
+          (pageHighlights || []).forEach((h) => {
+            const key = h.annotationId || h.id;
+            if (key) localByAnnotationId[key] = h;
+          });
+        });
+
+        const merged = {};
+        Object.entries(map).forEach(([pageKey, pageHighlights]) => {
+          const pageNum = Number(pageKey);
+          merged[pageNum] = (pageHighlights || []).map((serverHighlight) => {
+            const local = localByAnnotationId[serverHighlight.annotationId || serverHighlight.id];
+            if (!local) return serverHighlight;
+            const localChat = local.chatHistory || [];
+            const serverChat = serverHighlight.chatHistory || [];
+            if (localChat.length > serverChat.length) {
+              return {
+                ...serverHighlight,
+                chatHistory: localChat,
+                aiContent: local.aiContent || serverHighlight.aiContent,
+                threadId: local.threadId || serverHighlight.threadId,
+              };
+            }
+            return serverHighlight;
+          });
+        });
+        return merged;
+      });
     };
 
     loadAnnotations();
@@ -585,6 +620,21 @@ export default function ReaderScreen() {
     }
   }, [pendingReferenceFocusId, highlights, focusReferenceHighlight]);
 
+  const buildSelectionDropRects = useCallback((range) => {
+    const container = containerRef.current;
+    if (!container || !range) return [];
+    const containerRect = container.getBoundingClientRect();
+    const scrollTop = container.scrollTop;
+    return Array.from(range.getClientRects())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        left: rect.left - containerRect.left,
+        top: rect.top - containerRect.top + scrollTop,
+        width: rect.width,
+        height: rect.height,
+      }));
+  }, [containerRef]);
+
   // Handle text selection
   const handleTextSelection = (e) => {
     if (e.target.closest('.highlight-overlay')) {
@@ -597,10 +647,10 @@ export default function ReaderScreen() {
       
       if (text.length > 0) {
         setSelectedText(text);
-        clearSelectedHighlight();
         
         const range = selection.getRangeAt(0);
-        setSelectedRange(range);
+        setSelectedRange(range.cloneRange());
+        setSelectionDropRects(buildSelectionDropRects(range));
         
         const container = containerRef.current;
         if (container) {
@@ -616,6 +666,7 @@ export default function ReaderScreen() {
       } else {
         setMenuPosition(null);
         setSelectedRange(null);
+        setSelectionDropRects([]);
       }
     }, 10);
   };
@@ -630,6 +681,7 @@ export default function ReaderScreen() {
       setSelectedText(selectedText);
       setMenuPosition(null);
       setSelectedRange(null);
+      setSelectionDropRects([]);
       window.getSelection().removeAllRanges();
     }
   };
@@ -637,6 +689,8 @@ export default function ReaderScreen() {
   // Handle highlight click
   const onHighlightClick = (pageNum, highlightId) => {
     selectHighlight(pageNum, highlightId);
+    setSelectedRange(null);
+    setSelectionDropRects([]);
     const highlight = highlights[pageNum]?.find(h => h.id === highlightId);
     if (highlight) {
       setSelectedText(highlight.text);
@@ -675,6 +729,7 @@ export default function ReaderScreen() {
       extractFullPdfContext();
     }
     setSelectedRange(null);
+    setSelectionDropRects([]);
     window.getSelection().removeAllRanges();
   };
 
@@ -817,6 +872,193 @@ export default function ReaderScreen() {
     }
   };
 
+  // --- Cross-source synthesis (drag-and-drop reference onto selected text) ---
+  const handleSelectedTextDrop = useCallback((event, rectIdx) => {
+    if (!selectedText || !selectedRange || !selectionDropRects.length) return;
+    const types = Array.from(event?.dataTransfer?.types || []);
+    if (!types.includes('application/lumi-reference')) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    let reference = null;
+    try {
+      const raw = event.dataTransfer.getData('application/lumi-reference');
+      if (raw) reference = JSON.parse(raw);
+    } catch {
+      reference = null;
+    }
+    if (!reference) return;
+
+    const baseRect = selectionDropRects[Math.max(0, rectIdx)] || selectionDropRects[0];
+    const position = baseRect
+      ? { x: baseRect.left + baseRect.width / 2, y: baseRect.top }
+      : { x: event.clientX, y: event.clientY };
+
+    setCrossSourceMenu({
+      pageNum: currentPageInView,
+      reference,
+      position,
+      selectedText,
+      selectedRange: selectedRange.cloneRange ? selectedRange.cloneRange() : selectedRange,
+    });
+  }, [selectedText, selectedRange, selectionDropRects, currentPageInView]);
+
+  const dismissCrossSourceMenu = useCallback(() => {
+    setCrossSourceMenu(null);
+  }, []);
+
+  const handleCrossSourceAction = async (actionId) => {
+    if (!crossSourceMenu) return;
+    const {
+      pageNum,
+      reference,
+      selectedText: menuSelectedText,
+      selectedRange: menuSelectedRange,
+    } = crossSourceMenu;
+    if (!menuSelectedText || !menuSelectedRange) {
+      setCrossSourceMenu(null);
+      return;
+    }
+
+    setCrossSourceMenu(null);
+    const highlightResult = addHighlight(menuSelectedText, menuSelectedRange, pageNum, 'chat', null);
+    if (!highlightResult?.highlight) return;
+    const persisted = await persistHighlight(highlightResult.pageNum, highlightResult.highlight);
+    const resolvedId = persisted?.annotationId || highlightResult.highlight.id;
+    selectHighlight(highlightResult.pageNum, resolvedId);
+    setSelectedText(highlightResult.highlight.text);
+    setSelectedRange(null);
+    setSelectionDropRects([]);
+    window.getSelection()?.removeAllRanges?.();
+
+    if (isPanelCollapsed) setIsPanelCollapsed(false);
+
+    const target = {
+      ...highlightResult.highlight,
+      id: resolvedId,
+      annotationId: persisted?.annotationId || resolvedId,
+      aiType: 'chat',
+      chatHistory: highlightResult.highlight.chatHistory || [],
+    };
+
+    const actionLabel = CROSS_SOURCE_ACTION_LABELS[actionId] || actionId;
+    const referenceLabel = reference?.referenceNumber
+      ? `R${reference.referenceNumber}`
+      : 'reference';
+    const refSnippet = (reference?.selectedText || reference?.text || '').trim();
+    const userSummary = `${actionLabel} this passage with [${referenceLabel}]${
+      refSnippet ? `: "${refSnippet.length > 220 ? refSnippet.slice(0, 220).trimEnd() + '…' : refSnippet}"` : ''
+    }`;
+
+    const baseHistory = target.chatHistory || [];
+    const historyWithUser = [
+      ...baseHistory,
+      { role: 'user', content: userSummary, timestamp: Date.now() },
+    ];
+    updateHighlightChatHistory(highlightResult.pageNum, target.id, historyWithUser);
+
+    const effectiveHighlight = {
+      ...target,
+      annotationId: target.annotationId || target.id,
+      aiType: 'chat',
+    };
+
+    let threadId = effectiveHighlight.threadId;
+    if (!threadId) {
+      threadId = await ensureThreadForHighlight(highlightResult.pageNum, effectiveHighlight);
+    }
+
+    if (threadId && supabase && accountId && workspaceId) {
+      await supabase.from('thread_messages').insert({
+        thread_id: threadId,
+        workspace_id: workspaceId,
+        account_id: accountId,
+        role: 'user',
+        content: userSummary,
+        content_json: { kind: 'cross-source', action: actionId, referenceId: reference?.id || null },
+        citations_json: [],
+        created_by: accountId,
+      });
+    }
+
+    setIsChatLoading(true);
+    try {
+      const result = await crossSourceWithAI({
+        action: actionId,
+        highlight: {
+          id: effectiveHighlight.annotationId || effectiveHighlight.id,
+          text: effectiveHighlight.text || '',
+          sourceDocId: docId || undefined,
+          sourceDocTitle: fileName || undefined,
+          pageNumber: highlightResult.pageNum,
+        },
+        reference: {
+          id: reference.id,
+          text: reference.selectedText || reference.text || '',
+          referenceNumber: reference.referenceNumber || null,
+          sourceDocId: reference.sourceDocId,
+          sourceDocTitle: reference.sourceDocTitle,
+          pageNumber: reference.pageNumber || null,
+        },
+      });
+
+      const assistantContent = result.response || '';
+      const finalHistory = [
+        ...historyWithUser,
+        { role: 'assistant', content: assistantContent, timestamp: Date.now() },
+      ];
+      updateHighlightChatHistory(highlightResult.pageNum, target.id, finalHistory);
+
+      if (threadId && supabase && accountId && workspaceId) {
+        await supabase.from('thread_messages').insert({
+          thread_id: threadId,
+          workspace_id: workspaceId,
+          account_id: accountId,
+          role: 'assistant',
+          content: assistantContent,
+          content_json: {
+            kind: 'cross-source',
+            action: actionId,
+            referenceId: reference?.id || null,
+          },
+          citations_json: [],
+          created_by: accountId,
+        });
+      }
+
+      if (effectiveHighlight.annotationId && supabase) {
+        await supabase
+          .from('annotations')
+          .update({
+            has_thread: true,
+            anchor_json: {
+              rects: effectiveHighlight.rects || [],
+              aiType: effectiveHighlight.aiType,
+              aiContent: finalHistory?.[0]?.content || effectiveHighlight.aiContent || null,
+              chatHistory: finalHistory,
+              threadId,
+              referenceId: effectiveHighlight.referenceId || null,
+              pageWidth: pageWidth || null,
+            },
+          })
+          .eq('id', effectiveHighlight.annotationId);
+      }
+    } catch (error) {
+      console.error('Cross-source synthesis failed', error);
+      const errorHistory = [
+        ...historyWithUser,
+        {
+          role: 'assistant',
+          content: 'Sorry, I could not complete that cross-source operation. Please try again.',
+          timestamp: Date.now(),
+        },
+      ];
+      updateHighlightChatHistory(highlightResult.pageNum, target.id, errorHistory);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
   const removeHighlightFromState = (pageNum, targetId) => {
     setHighlights((prev) => {
       const pageHighlights = prev[pageNum] || [];
@@ -928,6 +1170,7 @@ export default function ReaderScreen() {
     }
     setMenuPosition(null);
     setSelectedRange(null);
+    setSelectionDropRects([]);
     window.getSelection().removeAllRanges();
   };
 
@@ -1050,12 +1293,42 @@ export default function ReaderScreen() {
             pdfContainerRef={pdfContainerRef}
           />
 
+          {selectionDropRects.map((rect, idx) => (
+            <div
+              key={`selection-drop-${idx}`}
+              className="absolute z-[120] rounded-sm bg-transparent border border-transparent"
+              style={{
+                left: `${rect.left}px`,
+                top: `${rect.top}px`,
+                width: `${rect.width}px`,
+                height: `${rect.height}px`,
+              }}
+              onDragOver={(event) => {
+                const types = Array.from(event?.dataTransfer?.types || []);
+                if (!types.includes('application/lumi-reference')) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
+              }}
+              onDrop={(event) => handleSelectedTextDrop(event, idx)}
+            />
+          ))}
+
           {/* Selection Menu */}
-          <SelectionMenu
-            menuPosition={menuPosition}
-            onAIChat={handleAIChatClick}
-            onHighlight={handleHighlight}
-            onSaveReference={handleSaveReference}
+          {!crossSourceMenu && (
+            <SelectionMenu
+              menuPosition={menuPosition}
+              onAIChat={handleAIChatClick}
+              onHighlight={handleHighlight}
+              onSaveReference={handleSaveReference}
+            />
+          )}
+
+          {/* Cross-source contextual action menu */}
+          <CrossSourceMenu
+            position={crossSourceMenu?.position || null}
+            reference={crossSourceMenu?.reference || null}
+            onSelectAction={handleCrossSourceAction}
+            onDismiss={dismissCrossSourceMenu}
           />
 
           {/* Page Highlights */}

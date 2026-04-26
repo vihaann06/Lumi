@@ -11,7 +11,6 @@ export default function HighlightOverlay({
   onHighlightClick,
   pdfContainerRef
 }) {
-  // Enable pointer-events on text spans and overlay rectangles
   useEffect(() => {
     if (highlights.length === 0) return;
     
@@ -19,20 +18,17 @@ export default function HighlightOverlay({
       const pageContainer = pdfContainerRef?.current?.querySelector(`[data-page-number="${pageNum}"]`);
       if (!pageContainer) return;
       
-      // Disable pointer-events on canvas to allow overlay clicks
       const canvas = pageContainer.querySelector('canvas');
       if (canvas) {
         canvas.style.pointerEvents = 'none';
         canvas.style.setProperty('pointer-events', 'none', 'important');
       }
       
-      // Disable pointer-events on text layer container to allow overlay clicks
       const textLayer = pageContainer.querySelector('.react-pdf__Page__textContent');
       if (textLayer) {
         textLayer.style.pointerEvents = 'none';
         textLayer.style.setProperty('pointer-events', 'none', 'important');
         
-        // Enable pointer-events on individual text spans so text selection still works
         const spans = textLayer.querySelectorAll('span');
         spans.forEach(span => {
           span.style.pointerEvents = 'auto';
@@ -40,7 +36,6 @@ export default function HighlightOverlay({
         });
       }
       
-      // Disable pointer-events on annotation layer if it exists
       const annotationLayer = pageContainer.querySelector('.react-pdf__Page__annotations');
       if (annotationLayer) {
         annotationLayer.style.pointerEvents = 'none';
@@ -48,14 +43,12 @@ export default function HighlightOverlay({
       }
     };
     
-    // Run immediately and also after a short delay to catch elements that load later
     updatePointerEvents();
     const timeoutId = setTimeout(updatePointerEvents, 100);
     requestAnimationFrame(updatePointerEvents);
     
     return () => {
       clearTimeout(timeoutId);
-      // Re-enable pointer-events when component unmounts
       const pageContainer = pdfContainerRef?.current?.querySelector(`[data-page-number="${pageNum}"]`);
       if (pageContainer) {
         const canvas = pageContainer.querySelector('canvas');
@@ -80,7 +73,6 @@ export default function HighlightOverlay({
 
   if (highlights.length === 0) return null;
 
-  // Count total rectangles for logging
   const totalRects = highlights.reduce((sum, h) => sum + (h.rects?.length || 1), 0);
   if (totalRects > 50) {
     console.warn(`⚠️ Warning: Rendering ${totalRects} rectangles for ${highlights.length} highlight(s) on page ${pageNum}. This may impact performance.`);
@@ -91,7 +83,7 @@ export default function HighlightOverlay({
       className="absolute top-0 left-0 highlight-overlay pointer-events-none" 
       style={{ 
         width: `${pageWidth}px`,
-        zIndex: 100, // Ensure overlay is well above PDF content (canvas, text layer, etc.)
+        zIndex: 100,
       }}
     >
       {highlights.map((highlight, idx) => {
@@ -105,13 +97,13 @@ export default function HighlightOverlay({
         const highlightId = highlight.id || idx;
         const isSelected = selectedHighlightId?.pageNum === pageNum && selectedHighlightId?.highlightId === highlightId;
         const isChatHighlight = highlight.aiType === 'chat' || highlight.aiType === 'explanation';
-        
-        // Determine highlight color based on type
+        const isReferenceHighlight = highlight.aiType === 'reference';
+
         let bgColor, bgColorSelected;
         if (isChatHighlight) {
           bgColor = 'bg-blue-100';
           bgColorSelected = 'bg-blue-200';
-        } else if (highlight.aiType === 'reference') {
+        } else if (isReferenceHighlight) {
           bgColor = 'bg-emerald-100';
           bgColorSelected = 'bg-emerald-200';
         } else if (highlight.aiType === 'summary') {
@@ -137,8 +129,8 @@ export default function HighlightOverlay({
                   top: `${rect.y}px`,
                   width: `${rect.width}px`,
                   height: `${rect.height}px`,
-                  pointerEvents: 'auto', // Ensure rectangles are clickable
-                  zIndex: 101, // Ensure rectangles are above everything
+                  pointerEvents: 'auto',
+                  zIndex: 101,
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -152,4 +144,3 @@ export default function HighlightOverlay({
     </div>
   );
 }
-
