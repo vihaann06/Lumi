@@ -26,6 +26,12 @@ export interface ReferenceMention {
   firstLine: number | null
 }
 
+export interface WriterSpanActionResult {
+  content: string
+  groundednessScore?: number | null
+  analysisSummary?: string | null
+}
+
 export function refsToContext(refs: Reference[], indexOffset = 0): ReferenceContext[] {
   return refs.map((r, i) => ({
     id: r.id,
@@ -129,4 +135,31 @@ export async function synthesizeEditProposal(
   }
 
   return data.proposal as EditProposal
+}
+
+export async function synthesizeWriterSpanAction(args: {
+  actionMode: 'support' | 'connect' | 'evaluate_grounding'
+  selectedText: string
+  references: ReferenceContext[]
+  documentContent: string
+}): Promise<WriterSpanActionResult> {
+  const res = await fetch('/api/ai/synthesize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Writer span action failed')
+  }
+
+  const data = await res.json()
+  return {
+    content: data?.content || '',
+    groundednessScore:
+      typeof data?.groundednessScore === 'number' ? data.groundednessScore : null,
+    analysisSummary:
+      typeof data?.analysisSummary === 'string' ? data.analysisSummary : null,
+  }
 }

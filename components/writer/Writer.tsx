@@ -17,6 +17,11 @@ type WriterProps = {
   referenceLookup: Reference[]
   focusedReferenceId: string | null
   onGoToSourceReference: (referenceId: string) => void
+  onSelectionChange: (selection: { start: number; end: number; text: string } | null) => void
+  onDropReferenceOnSelection: (payload: {
+    reference: Reference
+    position: { x: number; y: number }
+  }) => void
 }
 
 type LineOp = {
@@ -186,6 +191,8 @@ export default function Writer({
   referenceLookup,
   focusedReferenceId,
   onGoToSourceReference,
+  onSelectionChange,
+  onDropReferenceOnSelection,
 }: WriterProps) {
   const [zoom, setZoom] = useState(100)
   const [font, setFont] = useState('Arial')
@@ -209,9 +216,11 @@ export default function Writer({
   }, [citationMentions])
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [scrollLeft, setScrollLeft] = useState(0)
   const [inlineCitationPositions, setInlineCitationPositions] = useState<InlineCitationPosition[]>([])
+  const [isSelectionDropActive, setIsSelectionDropActive] = useState(false)
   const MIN_EDITOR_HEIGHT = 1056
 
   useEffect(() => {
@@ -308,6 +317,18 @@ export default function Writer({
     textareaEl.addEventListener('scroll', handleScroll)
     return () => textareaEl.removeEventListener('scroll', handleScroll)
   }, [])
+
+  const updateSelection = () => {
+    const textareaEl = textareaRef.current
+    if (!textareaEl) return
+    const start = textareaEl.selectionStart ?? 0
+    const end = textareaEl.selectionEnd ?? 0
+    if (end > start) {
+      onSelectionChange({ start, end, text: content.slice(start, end) })
+    } else {
+      onSelectionChange(null)
+    }
+  }
 
   useEffect(() => {
     const textareaEl = textareaRef.current
@@ -415,7 +436,7 @@ export default function Writer({
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#f9fbfd]">
+    <div ref={rootRef} className="h-full flex flex-col bg-[#f9fbfd]">
       {/* Top Bar */}
       <div className="bg-[#f9fbfd] border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between mb-2">
@@ -611,12 +632,50 @@ export default function Writer({
                 ref={textareaRef}
                 value={content}
                 onChange={(e) => onChangeContent(e.target.value)}
+                onSelect={updateSelection}
+                onKeyUp={updateSelection}
+                onMouseUp={updateSelection}
                 placeholder="Start typing..."
-                className="w-full min-h-[1056px] resize-none overflow-hidden outline-none text-gray-900 leading-relaxed p-0"
+                className={`w-full min-h-[1056px] resize-none overflow-hidden outline-none text-gray-900 leading-relaxed p-0 ${
+                  isSelectionDropActive ? 'ring-2 ring-indigo-300 rounded-sm' : ''
+                }`}
                 style={{
                   fontFamily: font,
                   fontSize: `${fontSize}pt`,
                   lineHeight: '1.5'
+                }}
+                onDragOver={(e) => {
+                  const hasSelection = (textareaRef.current?.selectionEnd || 0) > (textareaRef.current?.selectionStart || 0)
+                  if (!hasSelection) return
+                  if (!Array.from(e.dataTransfer.types || []).includes('application/lumi-reference')) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'copy'
+                  setIsSelectionDropActive(true)
+                }}
+                onDragLeave={() => {
+                  setIsSelectionDropActive(false)
+                }}
+                onDrop={(e) => {
+                  setIsSelectionDropActive(false)
+                  const hasSelection = (textareaRef.current?.selectionEnd || 0) > (textareaRef.current?.selectionStart || 0)
+                  if (!hasSelection) return
+                  if (!Array.from(e.dataTransfer.types || []).includes('application/lumi-reference')) return
+                  e.preventDefault()
+                  const raw = e.dataTransfer.getData('application/lumi-reference')
+                  if (!raw) return
+                  try {
+                    const reference = JSON.parse(raw) as Reference
+                    const rootRect = rootRef.current?.getBoundingClientRect()
+                    onDropReferenceOnSelection({
+                      reference,
+                      position: {
+                        x: e.clientX - (rootRect?.left || 0),
+                        y: e.clientY - (rootRect?.top || 0),
+                      },
+                    })
+                  } catch {
+                    // ignore malformed drag payload
+                  }
                 }}
               />
               {inlineCitationModel.occurrences.length > 0 && (

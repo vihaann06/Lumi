@@ -5,16 +5,27 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Writer from '../../../../components/writer/Writer'
 import WritingAIPanel from '../../../../components/writer/WritingAIPanel'
+import WriterReferenceActionMenu from '../../../../components/writer/WriterReferenceActionMenu'
 import { getSupabaseClient } from '@/lib/db/supabaseClient'
 import { useFileReferences } from '@/hooks/useFileReferences'
 import { getDocumentContent, upsertDocumentContent } from '@/lib/db/queries/documentContents'
 import type { Reference } from '@/lib/types/references'
-import type { EditProposal } from '@/lib/services/ai/synthesize'
+import {
+  refsToContext,
+  extractReferenceMentions,
+  synthesizeWriterSpanAction,
+  type EditProposal,
+  type SynthesisMessage,
+} from '@/lib/services/ai/synthesize'
 import {
   listSynthesisReferenceMentionsForDocument,
   syncSynthesisReferenceMentions,
   type SynthesisReferenceMention,
 } from '@/lib/db/queries/synthesisReferenceLinks'
+import {
+  createWriterTextReferenceLink,
+  type WriterReferenceActionType,
+} from '@/lib/db/queries/writerTextReferenceLinks'
 
 const inMemoryWriterDrafts = new Map<string, { content: string; updatedAt: number }>()
 let hasWarnedLocalDraftStorage = false
@@ -51,6 +62,20 @@ function FolderWriteContent() {
   const [extraRefs, setExtraRefs] = useState<Reference[]>([])
   const [citationMentions, setCitationMentions] = useState<SynthesisReferenceMention[]>([])
   const [focusedReferenceId, setFocusedReferenceId] = useState<string | null>(null)
+  const [writerSelection, setWriterSelection] = useState<{
+    start: number
+    end: number
+    text: string
+  } | null>(null)
+  const [pendingDroppedReference, setPendingDroppedReference] = useState<Reference | null>(null)
+  const [selectionActionMenuPosition, setSelectionActionMenuPosition] = useState<{
+    x: number
+    y: number
+  } | null>(null)
+  const [externalPanelEvent, setExternalPanelEvent] = useState<{
+    id: string
+    message: SynthesisMessage
+  } | null>(null)
   const hasLocalEditsRef = useRef(false)
   const saveInFlightRef = useRef(false)
   const queuedContentRef = useRef<string | null>(null)
@@ -495,6 +520,174 @@ function FolderWriteContent() {
     setExtraRefs((prev) => prev.filter((r) => r.id !== id))
   }
 
+  const pushExternalPanelMessage = useCallback((message: SynthesisMessage) => {
+    setExternalPanelEvent({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      message,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (writerSelection) return
+    setSelectionActionMenuPosition(null)
+    setPendingDroppedReference(null)
+  }, [writerSelection])
+
+  const persistWriterSpanProvenance = useCallback(
+    async ({
+      reference,
+      actionType,
+      selection,
+      groundednessScore,
+      analysisSummary,
+    }: {
+      reference: Reference
+      actionType: WriterReferenceActionType
+      selection: { start: number; end: number; text: string }
+      groundednessScore?: number | null
+      analysisSummary?: string | null
+    }) => {
+      if (!supabase || !accountId || !docId || !folderId || !writerDocMeta.workspaceId) return
+      await createWriterTextReferenceLink(supabase, {
+        accountId,
+        workspaceId: writerDocMeta.workspaceId,
+        folderId,
+        synthesisDocId: docId,
+        referenceId: reference.id,
+        spanStart: selection.start,
+        spanEnd: selection.end,
+        selectedTextSnapshot: selection.text,
+        actionType,
+        groundednessScore: groundednessScore ?? null,
+        analysisSummary: analysisSummary ?? null,
+      })
+    },
+    [supabase, accountId, docId, folderId, writerDocMeta.workspaceId]
+  )
+
+  const handleDropReferenceOnSelection = useCallback(
+    ({
+      reference,
+      position,
+    }: {
+      reference: Reference
+      position: { x: number; y: number }
+    }) => {
+      if (!writerSelection || !writerSelection.text?.trim()) return
+      setPendingDroppedReference(reference)
+      setSelectionActionMenuPosition(position)
+      addActiveRef(reference)
+    },
+    [writerSelection, addActiveRef]
+  )
+
+  const handleDismissSelectionActionMenu = useCallback(() => {
+    setSelectionActionMenuPosition(null)
+    setPendingDroppedReference(null)
+  }, [])
+
+  const handleWriterSelectionAction = useCallback(
+    async (actionType: WriterReferenceActionType) => {
+      if (!pendingDroppedReference || !writerSelection) {
+        handleDismissSelectionActionMenu()
+        return
+      }
+
+      const ref = pendingDroppedReference
+      const selection = writerSelection
+      handleDismissSelectionActionMenu()
+
+      if (actionType === 'cite') {
+        const citationToken = `[R${ref.referenceNumber}]`
+        const nextContent = `${content.slice(0, selection.end)} ${citationToken}${content.slice(selection.end)}`
+        hasLocalEditsRef.current = true
+        if (docId) writeLocalDraft(docId, nextContent)
+        setContent(nextContent)
+
+        const refCtx = refsToContext(activeRefs)
+        const mentions = extractReferenceMentions(nextContent, refCtx)
+        setCitationMentions(mentions)
+        if (supabase && docId && folderId && accountId) {
+          void syncSynthesisReferenceMentions(supabase, {
+            accountId,
+            folderId,
+            synthesisDocId: docId,
+            mentions,
+          })
+        }
+
+        await persistWriterSpanProvenance({
+          reference: ref,
+          actionType: 'cite',
+          selection,
+        })
+        pushExternalPanelMessage({
+          role: 'assistant',
+          content: `Attached [R${ref.referenceNumber}] to the selected text.`,
+        })
+        return
+      }
+
+      try {
+        const refCtx = refsToContext([ref])
+        const result = await synthesizeWriterSpanAction({
+          actionMode:
+            actionType === 'evaluate_grounding'
+              ? 'evaluate_grounding'
+              : actionType === 'support'
+              ? 'support'
+              : 'connect',
+          selectedText: selection.text,
+          references: refCtx,
+          documentContent: content,
+        })
+
+        await persistWriterSpanProvenance({
+          reference: ref,
+          actionType,
+          selection,
+          groundednessScore: result.groundednessScore,
+          analysisSummary: result.analysisSummary,
+        })
+
+        if (actionType === 'evaluate_grounding') {
+          const scoreLine =
+            typeof result.groundednessScore === 'number'
+              ? `Groundedness score: ${result.groundednessScore}/100`
+              : 'Groundedness score: unavailable'
+          pushExternalPanelMessage({
+            role: 'assistant',
+            content: `${scoreLine}\n\n${result.content}`,
+          })
+        } else {
+          pushExternalPanelMessage({
+            role: 'assistant',
+            content: result.content || 'No suggestion returned.',
+          })
+        }
+      } catch (error: any) {
+        pushExternalPanelMessage({
+          role: 'assistant',
+          content: `Error: ${error?.message || 'Failed to process selection action.'}`,
+        })
+      }
+    },
+    [
+      pendingDroppedReference,
+      writerSelection,
+      handleDismissSelectionActionMenu,
+      content,
+      activeRefs,
+      supabase,
+      docId,
+      folderId,
+      accountId,
+      writeLocalDraft,
+      persistWriterSpanProvenance,
+      pushExternalPanelMessage,
+    ]
+  )
+
   const handleProposeEdit = (proposal: EditProposal) => {
     setPendingEditProposal(proposal)
   }
@@ -577,18 +770,27 @@ function FolderWriteContent() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Writer area */}
         <div className="flex-1 min-w-0 overflow-hidden">
-          <Writer
-            fileName={fileName || 'Untitled'}
-            content={content}
-            onChangeContent={handleContentChange}
-            pendingEditProposal={pendingEditProposal}
-            onApprovePendingEdit={handleApproveEdit}
-            onRejectPendingEdit={handleRejectEdit}
-            citationMentions={citationMentions}
-            referenceLookup={activeRefs}
-            focusedReferenceId={focusedReferenceId}
-            onGoToSourceReference={handleGoToSourceReference}
-          />
+          <div className="relative h-full">
+            <Writer
+              fileName={fileName || 'Untitled'}
+              content={content}
+              onChangeContent={handleContentChange}
+              pendingEditProposal={pendingEditProposal}
+              onApprovePendingEdit={handleApproveEdit}
+              onRejectPendingEdit={handleRejectEdit}
+              citationMentions={citationMentions}
+              referenceLookup={activeRefs}
+              focusedReferenceId={focusedReferenceId}
+              onGoToSourceReference={handleGoToSourceReference}
+              onSelectionChange={setWriterSelection}
+              onDropReferenceOnSelection={handleDropReferenceOnSelection}
+            />
+            <WriterReferenceActionMenu
+              position={selectionActionMenuPosition}
+              onSelectAction={handleWriterSelectionAction}
+              onDismiss={handleDismissSelectionActionMenu}
+            />
+          </div>
         </div>
 
         {/* Resizable divider */}
@@ -636,6 +838,7 @@ function FolderWriteContent() {
             hasPendingEdit={Boolean(pendingEditProposal)}
             isCollapsed={panelCollapsed}
             onToggleCollapse={() => setPanelCollapsed(!panelCollapsed)}
+            externalEvent={externalPanelEvent}
           />
         </div>
       </div>

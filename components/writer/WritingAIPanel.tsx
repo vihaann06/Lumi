@@ -32,6 +32,7 @@ type WritingAIPanelProps = {
   hasPendingEdit: boolean
   isCollapsed: boolean
   onToggleCollapse: () => void
+  externalEvent?: { id: string; message: SynthesisMessage } | null
 }
 
 export default function WritingAIPanel({
@@ -42,16 +43,25 @@ export default function WritingAIPanel({
   hasPendingEdit,
   isCollapsed,
   onToggleCollapse,
+  externalEvent,
 }: WritingAIPanelProps) {
   const [messages, setMessages] = useState<SynthesisMessage[]>([])
   const [mode, setMode] = useState<'ask' | 'edit'>('ask')
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const consumedExternalEventRef = useRef<string | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (!externalEvent?.id || !externalEvent.message) return
+    if (consumedExternalEventRef.current === externalEvent.id) return
+    consumedExternalEventRef.current = externalEvent.id
+    setMessages((prev) => [...prev, externalEvent.message])
+  }, [externalEvent])
 
   const consumeUsedReferences = useCallback(
     (content: string, refCtx: ReturnType<typeof refsToContext>) => {

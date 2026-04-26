@@ -53,12 +53,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const {
       mode,
+      actionMode,
+      selectedText,
       instruction,
       messages,
       references,
       documentContent,
     }: {
       mode?: 'ask' | 'edit'
+      actionMode?: 'support' | 'connect' | 'evaluate_grounding'
+      selectedText?: string
       instruction?: string
       messages: { role: string; content: string }[]
       references: ReferenceContext[]
@@ -76,6 +80,60 @@ export async function POST(req: NextRequest) {
     const docContext = documentContent
       ? `\n\nThe user's current document draft:\n\n${documentContent.slice(0, mode === 'edit' ? 20000 : 3000)}`
       : ''
+
+    if (actionMode) {
+      if (!selectedText?.trim()) {
+        return NextResponse.json(
+          { error: 'selectedText is required for writer span actions' },
+          { status: 400 }
+        )
+      }
+
+      const actionPromptMap: Record<
+        'support' | 'connect' | 'evaluate_grounding',
+        string
+      > = {
+        support:
+          'Revise the selected passage so it is better supported by the provided references while preserving the original claim.',
+        connect:
+          'Explain and integrate how the selected passage relates to the provided references. Optionally suggest a revised passage.',
+        evaluate_grounding:
+          'Evaluate how well the selected passage is grounded in the provided references. Return structured JSON.',
+      }
+
+      if (actionMode === 'evaluate_grounding') {
+        const evalPrompt = `You are assisting with grounded writing. Given a user-written passage and one or more source references:\n\n- Always base your response ONLY on the provided text and references.\n- Do not introduce unsupported claims.\n- Be explicit about how the reference relates to the text.\n\nFor Evaluate Grounding:\n- Assess how well the claim is supported by the reference.\n- Output a score and concise reasoning.\n- If weakly grounded, suggest improvements.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \"groundednessScore\": 0,\n  \"analysisSummary\": \"short explanation\",\n  \"content\": \"markdown bullet list with concise reasoning and optional improvements\"\n}\n\nSelected text:\n\"\"\"\n${selectedText}\n\"\"\"`
+        const evaluation = await requestClaude({
+          system: `${systemPrompt}${docContext}`,
+          messages: [{ role: 'user', content: evalPrompt }],
+          maxTokens: 1200,
+          temperature: 0.2,
+        })
+        const parsed = parseJsonObject(evaluation) || {}
+        const scoreRaw = Number(parsed.groundednessScore)
+        const groundednessScore = Number.isFinite(scoreRaw)
+          ? Math.max(0, Math.min(100, Math.round(scoreRaw)))
+          : null
+        const analysisSummary =
+          typeof parsed.analysisSummary === 'string' ? parsed.analysisSummary : null
+        const content =
+          typeof parsed.content === 'string' && parsed.content.trim()
+            ? parsed.content
+            : evaluation
+        return NextResponse.json({ content, groundednessScore, analysisSummary })
+      }
+
+      const prompt = `${actionPromptMap[actionMode]}\n\nYou are assisting with grounded writing. Given a user-written passage and source references:\n- Always base your response ONLY on provided text and references.\n- Do not introduce unsupported claims.\n- Be explicit about how references relate to the passage.\n\nSelected text:\n\"\"\"\n${selectedText}\n\"\"\"`
+
+      const content = await requestClaude({
+        system: `${systemPrompt}${docContext}`,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 1500,
+        temperature: 0.5,
+      })
+
+      return NextResponse.json({ content })
+    }
 
     if (mode === 'edit') {
       if (!instruction?.trim()) {
