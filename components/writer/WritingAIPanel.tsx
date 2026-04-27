@@ -9,6 +9,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { Reference } from '@/lib/types/references'
 import {
   synthesizeChat,
@@ -53,6 +55,28 @@ export default function WritingAIPanel({
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const consumedExternalEventRef = useRef<string | null>(null)
+  const markdownComponents = {
+    h1: ({ children }: any) => <h1 className="text-base font-semibold mt-2 mb-1">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="text-sm font-semibold mt-2 mb-1">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+    p: ({ children }: any) => <p className="text-sm leading-relaxed whitespace-pre-wrap mb-2 last:mb-0">{children}</p>,
+    ul: ({ children }: any) => <ul className="list-disc pl-5 space-y-1 mb-2">{children}</ul>,
+    ol: ({ children }: any) => <ol className="list-decimal pl-5 space-y-1 mb-2">{children}</ol>,
+    li: ({ children }: any) => <li className="text-sm leading-relaxed">{children}</li>,
+    strong: ({ children }: any) => <strong className="font-semibold">{children}</strong>,
+    em: ({ children }: any) => <em className="italic">{children}</em>,
+    code: ({ children }: any) => (
+      <code className="text-[12px] bg-slate-200/70 text-slate-800 rounded px-1 py-0.5">{children}</code>
+    ),
+    pre: ({ children }: any) => (
+      <pre className="text-[12px] bg-slate-200/70 text-slate-800 rounded-lg p-2 overflow-x-auto mb-2">
+        {children}
+      </pre>
+    ),
+    blockquote: ({ children }: any) => (
+      <blockquote className="border-l-2 border-slate-300 pl-3 text-slate-600 italic mb-2">{children}</blockquote>
+    ),
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -269,7 +293,9 @@ export default function WritingAIPanel({
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>
             ) : (
-              <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {msg.content}
+              </ReactMarkdown>
             )}
           </div>
         ))}

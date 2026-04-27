@@ -71,7 +71,7 @@ export default function CrossSourceMenu({
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
-        transform: 'translate(-50%, calc(-100% - 12px))',
+        transform: 'translate(-50%, calc(-100% - 28px))',
       }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}

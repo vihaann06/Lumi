@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, FileText, Upload, Pencil, Trash2, BookmarkCheck } from 'lucide-react'
 import { useFolderData } from './useFolderData'
@@ -189,9 +189,8 @@ export default function FolderPage() {
   }, [refreshReferences, references, activeDocId, postMessageToIframe, supabase])
 
   // --- File operations ---
-  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (file: File | null) => {
     setUploadError(null)
-    const file = e.target.files?.[0]
     if (!file || !folderId) return
     try {
       if (file.type !== 'application/pdf') {
@@ -215,8 +214,6 @@ export default function FolderPage() {
       setFileName('')
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed.')
-    } finally {
-      e.target.value = ''
     }
   }
 
@@ -311,7 +308,7 @@ export default function FolderPage() {
             <button
               type="button"
               onClick={() => setIsAddMenuOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-500 bg-gradient-to-r from-indigo-600 to-violet-600 text-sm text-white shadow-sm shadow-indigo-500/30 hover:from-indigo-700 hover:to-violet-700 transition"
             >
               <Plus className="w-4 h-4" />
               Add
@@ -476,7 +473,13 @@ export default function FolderPage() {
 
       {/* Modals */}
       {isReadModalOpen && (
-        <ReadModal fileName={fileName} onChangeName={setFileName} onUpload={handleFileUpload}
+        <ReadModal
+          fileName={fileName}
+          onChangeName={setFileName}
+          onUpload={(fileOrEvent: any) => {
+            const maybeFile = fileOrEvent?.target?.files?.[0] ?? fileOrEvent ?? null
+            void handleFileUpload(maybeFile)
+          }}
           onClose={() => { setIsReadModalOpen(false); setFileName('') }} />
       )}
       {isNameModalOpen && (

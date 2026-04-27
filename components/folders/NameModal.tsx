@@ -22,7 +22,14 @@ export default function NameModal({ fileName, onChangeName, onConfirm, onClose }
             <p className="text-xs text-slate-500">We’ll open the editor next</p>
           </div>
         </div>
-        <div className="space-y-4">
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!fileName.trim()) return
+            onConfirm()
+          }}
+        >
           <input
             type="text"
             value={fileName}
@@ -42,18 +49,14 @@ export default function NameModal({ fileName, onChangeName, onConfirm, onClose }
               Cancel
             </button>
             <button
-              type="button"
+              type="submit"
               disabled={!fileName.trim()}
-              onClick={() => {
-                if (!fileName.trim()) return
-                onConfirm()
-              }}
               className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white text-sm font-medium px-4 py-2 shadow-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Start writing
             </button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   )

@@ -1,16 +1,20 @@
 'use client'
 
 import { Upload } from 'lucide-react'
-import { ChangeEvent } from 'react'
+import { useRef, useState } from 'react'
 
 type Props = {
   fileName: string
   onChangeName: (v: string) => void
-  onUpload: (e: ChangeEvent<HTMLInputElement>) => void
+  onUpload: (file: File | null) => void
   onClose: () => void
 }
 
 export default function ReadModal({ fileName, onChangeName, onUpload, onClose }: Props) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const canUpload = Boolean(fileName.trim())
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
@@ -34,22 +38,51 @@ export default function ReadModal({ fileName, onChangeName, onUpload, onClose }:
             autoFocus
           />
 
-          <label className="group flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/50 transition">
+          <div
+            className={`group flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition ${
+              isDragging
+                ? 'border-indigo-400 bg-indigo-50'
+                : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/50'
+            } ${!canUpload ? 'opacity-80' : ''}`}
+            onClick={() => {
+              if (!canUpload) return
+              fileInputRef.current?.click()
+            }}
+            onDragOver={(e) => {
+              if (!canUpload) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setIsDragging(true)
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              setIsDragging(false)
+              if (!canUpload) return
+              e.preventDefault()
+              const file = e.dataTransfer.files?.[0] || null
+              if (file) onUpload(file)
+            }}
+          >
             <div className="flex flex-col items-center gap-2 text-slate-500 text-sm">
               <Upload className="h-5 w-5" />
-              <span>Click to upload PDF</span>
+              <span>Click to browse or drag and drop PDF</span>
               <span className="text-xs text-slate-400">We’ll open it in the reader</span>
             </div>
             <input
+              ref={fileInputRef}
               type="file"
               accept="application/pdf"
               className="hidden"
-              onChange={onUpload}
-              disabled={!fileName.trim()}
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null
+                onUpload(file)
+                e.currentTarget.value = ''
+              }}
+              disabled={!canUpload}
             />
-          </label>
+          </div>
 
-          {!fileName.trim() && (
+          {!canUpload && (
             <p className="text-xs text-amber-600">Enter a name before uploading.</p>
           )}
 
