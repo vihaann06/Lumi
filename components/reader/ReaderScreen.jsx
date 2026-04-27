@@ -1207,6 +1207,33 @@ export default function ReaderScreen() {
     }
   }, [selectedHighlight?.referenceId]);
 
+  const handleDropReferenceIntoReaderChat = useCallback(
+    (event) => {
+      const types = Array.from(event?.dataTransfer?.types || []);
+      if (!types.includes('application/lumi-reference')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const raw = event.dataTransfer.getData('application/lumi-reference');
+      if (!raw) return;
+      try {
+        const reference = JSON.parse(raw);
+        if (!reference?.id) return;
+        setActiveChatRefs((prev) => {
+          if (prev.some((ref) => ref.id === reference.id)) return prev;
+          return [...prev, reference];
+        });
+        if (accountId) {
+          attachToFile(accountId, reference.id);
+          setRefSavedFlash(true);
+          setTimeout(() => setRefSavedFlash(false), 1200);
+        }
+      } catch {
+        // ignore malformed drop payload
+      }
+    },
+    [accountId, attachToFile]
+  );
+
   if (!pdfFile) {
     return null;
   }
@@ -1254,7 +1281,7 @@ export default function ReaderScreen() {
       )}
 
       {/* Zoom controls (always visible) */}
-      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+      <div className="absolute bottom-4 left-4 z-30 flex items-center gap-2">
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white/90 backdrop-blur-sm px-2 py-1 shadow-sm">
           <button
             type="button"
@@ -1366,6 +1393,13 @@ export default function ReaderScreen() {
                 minWidth: isPanelCollapsed ? 48 : minRight,
                 maxWidth: isPanelCollapsed ? 48 : maxRight,
               }}
+              onDragOver={(event) => {
+                const types = Array.from(event?.dataTransfer?.types || []);
+                if (!types.includes('application/lumi-reference')) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
+              }}
+              onDrop={handleDropReferenceIntoReaderChat}
             >
               <div className="h-full flex flex-col">
                 <div className={isPanelCollapsed ? 'h-full' : 'flex-1 min-h-0'}>

@@ -663,6 +663,7 @@ function FolderWriteContent() {
           pushExternalPanelMessage({
             role: 'assistant',
             content: `${scoreLine}\n\n${result.content}`,
+            groundednessScore: result.groundednessScore ?? null,
           })
         } else {
           pushExternalPanelMessage({
@@ -849,6 +850,7 @@ function FolderWriteContent() {
             onToggleCollapse={() => setPanelCollapsed(!panelCollapsed)}
             externalEvent={externalPanelEvent}
             externalLoading={isSelectionActionLoading}
+            onDropReference={handleReferenceDrop}
           />
         </div>
       </div>

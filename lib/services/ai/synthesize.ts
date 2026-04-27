@@ -3,6 +3,7 @@ import type { Reference } from '@/lib/types/references'
 export interface SynthesisMessage {
   role: 'user' | 'assistant'
   content: string
+  groundednessScore?: number | null
 }
 
 export interface EditProposal {

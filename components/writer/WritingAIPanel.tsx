@@ -36,6 +36,7 @@ type WritingAIPanelProps = {
   onToggleCollapse: () => void
   externalEvent?: { id: string; message: SynthesisMessage } | null
   externalLoading?: boolean
+  onDropReference?: (event: React.DragEvent<HTMLDivElement>) => void
 }
 
 export default function WritingAIPanel({
@@ -48,6 +49,7 @@ export default function WritingAIPanel({
   onToggleCollapse,
   externalEvent,
   externalLoading = false,
+  onDropReference,
 }: WritingAIPanelProps) {
   const [messages, setMessages] = useState<SynthesisMessage[]>([])
   const [mode, setMode] = useState<'ask' | 'edit'>('ask')
@@ -182,7 +184,16 @@ export default function WritingAIPanel({
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div
+      className="h-full flex flex-col bg-white"
+      onDragOver={(event) => {
+        const types = Array.from(event?.dataTransfer?.types || [])
+        if (!types.includes('application/lumi-reference')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(event) => onDropReference?.(event)}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200/60">
         <div className="flex items-center gap-2">
@@ -293,9 +304,25 @@ export default function WritingAIPanel({
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>
             ) : (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {msg.content}
-              </ReactMarkdown>
+              <>
+                {typeof msg.groundednessScore === 'number' && (
+                  <div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-2.5">
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="font-semibold text-indigo-700">Groundedness</span>
+                      <span className="font-semibold text-indigo-700">{msg.groundednessScore}/100</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-indigo-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-indigo-500 transition-all duration-500"
+                        style={{ width: `${Math.max(0, Math.min(100, msg.groundednessScore))}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {msg.content}
+                </ReactMarkdown>
+              </>
             )}
           </div>
         ))}
