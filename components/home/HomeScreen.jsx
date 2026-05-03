@@ -7,7 +7,6 @@ import HomeHeader from './HomeHeader'
 import FoldersHeader from './FoldersHeader'
 import FoldersList from './FoldersList'
 import CreateFolderModal from './CreateFolderModal'
-import FolderPrompt from './FolderPrompt'
 import RenameFolderModal from './RenameFolderModal'
 
 export default function HomeScreen() {
@@ -202,9 +201,8 @@ export default function HomeScreen() {
   }, [authUser?.id])
 
   return (
-    <div className="h-screen bg-slate-50 flex">
-      {/* Control panel (sidebar) */}
-      <div className="w-full md:w-1/3 border-r border-slate-200 bg-white flex flex-col gap-6 p-6">
+    <div className="h-dvh overflow-y-auto overflow-x-hidden bg-slate-50">
+      <div className="mx-auto flex max-w-6xl flex-col px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
         <HomeHeader
           isAuthed={isAuthed}
           profileInitial={profileInitial}
@@ -214,9 +212,15 @@ export default function HomeScreen() {
           onSignIn={handleSignIn}
         />
 
-        <FoldersHeader isAuthed={isAuthed} onOpenCreate={() => setIsModalOpen(true)} />
+        <p className="mt-4 max-w-2xl text-sm text-slate-600 sm:text-base">
+          Your folders are the hub for sources, reading, and synthesis. Pick one to continue where you left off.
+        </p>
 
-        <div className="flex-1 overflow-y-auto pr-2">
+        <div className="mt-8 sm:mt-10">
+          <FoldersHeader isAuthed={isAuthed} onOpenCreate={() => setIsModalOpen(true)} />
+        </div>
+
+        <div className="mt-6 pb-12">
           <FoldersList
             isAuthed={isAuthed}
             isLoadingFolders={isLoadingFolders}
@@ -228,11 +232,6 @@ export default function HomeScreen() {
             deletingId={deletingId}
           />
         </div>
-      </div>
-
-      {/* Right side content area */}
-      <div className="flex-1 bg-slate-50">
-        <FolderPrompt />
       </div>
 
       {/* Create folder modal */}

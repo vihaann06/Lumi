@@ -15,12 +15,29 @@ export const usePDFViewer = () => {
   const docId = searchParams.get('docId');
   const [docMeta, setDocMeta] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
+  const objectUrlRef = useRef(null);
+
+  const getDocCacheKeys = (id) => ({
+    pdfKey: `pdfFile:${id}`,
+    nameKey: `pdfFileName:${id}`,
+    docIdKey: 'lastPdfDocId',
+  });
 
   // Hydration-safe: resolve pdfFile from URL param or sessionStorage after mount
   useEffect(() => {
+    if (!docId) return;
     const fileUrl = searchParams.get('fileUrl');
-    if (fileUrl) { setPdfFile(fileUrl); return; }
-    const base64 = sessionStorage.getItem('pdfFile');
+    if (fileUrl) {
+      setPdfFile(fileUrl);
+      return;
+    }
+
+    const keys = getDocCacheKeys(docId);
+    const cachedDocId = sessionStorage.getItem(keys.docIdKey);
+    // Only hydrate from cache if it belongs to the current doc id.
+    if (cachedDocId !== docId) return;
+
+    const base64 = sessionStorage.getItem(keys.pdfKey);
     if (base64) {
       try {
         const byteCharacters = atob(base64.split(',')[1]);
@@ -30,10 +47,12 @@ export const usePDFViewer = () => {
         }
         const byteArray = new Uint8Array(byteNumbers);
         const blob = new Blob([byteArray], { type: 'application/pdf' });
-        setPdfFile(URL.createObjectURL(blob));
+        const nextObjectUrl = URL.createObjectURL(blob);
+        objectUrlRef.current = nextObjectUrl;
+        setPdfFile(nextObjectUrl);
       } catch { /* ignore corrupt sessionStorage */ }
     }
-  }, [searchParams]);
+  }, [searchParams, docId]);
   const [numPages, setNumPages] = useState(null);
   const [pageWidth, setPageWidth] = useState(800);
   const [currentPageInView, setCurrentPageInView] = useState(1);
@@ -77,16 +96,19 @@ export const usePDFViewer = () => {
 
           // Create an object URL for the viewer
           const objectUrl = URL.createObjectURL(blob);
+          objectUrlRef.current = objectUrl;
           setPdfFile(objectUrl);
 
-          // Store in sessionStorage for reloads
+          // Store in sessionStorage for reloads, scoped to doc id.
+          const keys = getDocCacheKeys(docId);
           const reader = new FileReader();
           reader.onload = () => {
             const base64 = reader.result;
             if (base64) {
             try {
-              sessionStorage.setItem('pdfFile', base64);
-              if (docRow.title) sessionStorage.setItem('pdfFileName', docRow.title);
+              sessionStorage.setItem(keys.pdfKey, base64);
+              sessionStorage.setItem(keys.docIdKey, docId);
+              if (docRow.title) sessionStorage.setItem(keys.nameKey, docRow.title);
             } catch (err) {
               console.warn('Skipping sessionStorage cache for PDF (likely too large):', err);
             }
@@ -108,6 +130,15 @@ export const usePDFViewer = () => {
 
     loadFromStorage();
   }, [supabase, docId, pdfFile, isFetchingDoc, router]);
+
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, []);
 
   // Update page width on resize
   useEffect(() => {

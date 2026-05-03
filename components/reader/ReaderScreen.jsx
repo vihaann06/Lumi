@@ -470,7 +470,11 @@ export default function ReaderScreen() {
       setFileName(fromQuery);
       return;
     }
-    const stored = typeof window !== 'undefined' ? sessionStorage.getItem('pdfFileName') : null;
+    const currentDocId = searchParams.get('docId');
+    const stored =
+      typeof window !== 'undefined' && currentDocId
+        ? sessionStorage.getItem(`pdfFileName:${currentDocId}`)
+        : null;
     if (stored) setFileName(stored);
   }, [searchParams]);
 

@@ -102,7 +102,36 @@ export async function POST(req: NextRequest) {
       }
 
       if (actionMode === 'evaluate_grounding') {
-        const evalPrompt = `You are assisting with grounded writing. Given a user-written passage and one or more source references:\n\n- Always base your response ONLY on the provided text and references.\n- Do not introduce unsupported claims.\n- Be explicit about how the reference relates to the text.\n\nFor Evaluate Grounding:\n- Assess how well the claim is supported by the reference.\n- Output a score and concise reasoning.\n- If weakly grounded, suggest improvements.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \"groundednessScore\": 0,\n  \"analysisSummary\": \"short explanation\",\n  \"content\": \"markdown bullet list with concise reasoning and optional improvements\"\n}\n\nSelected text:\n\"\"\"\n${selectedText}\n\"\"\"`
+        const evalPrompt = `You are assisting with grounded writing. Given a user-written passage and one or more source references:
+
+- Base your response ONLY on the provided passage and references.
+- Do not introduce unsupported claims.
+- Be explicit about how the reference supports (or fails to support) the passage.
+
+Evaluate grounding using this rubric (0-100):
+- 0-20: Little to no support; mostly unsupported or contradicted.
+- 21-40: Weak support; only vague or partial overlap.
+- 41-60: Moderate support; core idea is related but evidence is incomplete.
+- 61-80: Good support; most key claims are backed with minor gaps.
+- 81-100: Strong support; direct, specific, and sufficient evidence.
+
+Scoring rules:
+- Use the full range; do NOT default to very low scores.
+- Scores below 10 should be rare and only when support is essentially absent.
+- If there is meaningful textual overlap, the score should generally be at least 30+.
+- If support is mixed, choose a middle band and explain what is missing.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "groundednessScore": 0,
+  "analysisSummary": "short explanation",
+  "content": "markdown bullet list with concise reasoning and optional improvements"
+}
+
+Selected text:
+"""
+${selectedText}
+"""`
         const evaluation = await requestClaude({
           system: `${systemPrompt}${docContext}`,
           messages: [{ role: 'user', content: evalPrompt }],

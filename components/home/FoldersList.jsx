@@ -1,7 +1,5 @@
 import { Folder, Loader2 } from 'lucide-react'
 
-import { MoreHorizontal } from 'lucide-react'
-
 export default function FoldersList({
   isAuthed,
   isLoadingFolders,
@@ -14,12 +12,18 @@ export default function FoldersList({
 }) {
   if (!isAuthed) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 space-y-3">
-        <p>Sign in to view and manage your folders.</p>
+      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+          <Folder className="h-7 w-7" />
+        </div>
+        <p className="text-base font-medium text-slate-900">Sign in to see your folders</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Your workspaces and provenance links live here after you sign in.
+        </p>
         <button
           type="button"
           onClick={onSignIn}
-          className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
+          className="mt-6 inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
         >
           Go to sign in
         </button>
@@ -29,76 +33,86 @@ export default function FoldersList({
 
   if (isLoadingFolders) {
     return (
-      <div className="flex items-center gap-2 text-slate-500 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading folders...
+      <div className="flex flex-col items-center justify-center gap-3 py-20 text-slate-500">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+        <p className="text-sm">Loading folders…</p>
       </div>
     )
   }
 
   if (folders.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-600 flex items-center gap-3">
-        <Folder className="h-5 w-5 text-slate-400" />
-        You have no folders yet. Create your first folder to get started.
+      <div className="mx-auto max-w-lg rounded-2xl border-2 border-dashed border-slate-200 bg-white/80 p-10 text-center">
+        <Folder className="mx-auto h-10 w-10 text-slate-300" />
+        <p className="mt-4 text-base font-medium text-slate-800">No folders yet</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Create a folder to start collecting sources and writing synthesis in one place.
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {folders.map((folder) => (
         <div
           key={folder.id}
-          className="group w-full text-left px-4 py-3 hover:bg-indigo-50/40 transition flex items-start gap-3"
+          className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200 hover:shadow-md"
         >
           <button
+            type="button"
             onClick={() => onOpenFolder(folder.id)}
-            className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0"
+            className="flex flex-1 flex-col text-left"
           >
-            <Folder className="h-5 w-5" />
-          </button>
-          <div className="flex-1 min-w-0" onClick={() => onOpenFolder(folder.id)}>
-            <p className="text-sm font-semibold text-slate-900 truncate">
-              {folder.name}
-            </p>
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-500/25">
+              <Folder className="h-6 w-6" />
+            </span>
+            <p className="mt-4 text-lg font-semibold text-slate-900 line-clamp-2">{folder.name}</p>
             {folder.description ? (
-              <p className="text-xs text-slate-500 line-clamp-2 mt-1">
-                {folder.description}
-              </p>
-            ) : null}
-            <p className="text-[11px] text-slate-400 mt-2">
+              <p className="mt-2 flex-1 text-sm text-slate-500 line-clamp-3">{folder.description}</p>
+            ) : (
+              <p className="mt-2 flex-1 text-sm text-slate-400">No description</p>
+            )}
+            <p className="mt-4 text-xs text-slate-400">
               Created {new Date(folder.created_at).toLocaleDateString()}
             </p>
-          </div>
-          <div className="relative">
-            <div className="flex items-center gap-2 ml-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRenameFolder?.(folder)
-                }}
-                className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
-              >
-                Rename
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDeleteFolder?.(folder)
-                }}
-                disabled={deletingId === folder.id}
-                className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {deletingId === folder.id ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
+          </button>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenFolder(folder.id)
+              }}
+              className="inline-flex flex-1 items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 sm:flex-none sm:px-4"
+            >
+              Open
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRenameFolder?.(folder)
+              }}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDeleteFolder?.(folder)
+              }}
+              disabled={deletingId === folder.id}
+              className="inline-flex items-center justify-center rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+            >
+              {deletingId === folder.id ? 'Deleting…' : 'Delete'}
+            </button>
           </div>
         </div>
       ))}
     </div>
   )
 }
-
