@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isClaudeConfigured, requestClaude } from '@/lib/services/ai/claudeServer';
-import { requireUser } from '@/lib/auth/requireUser';
+import { requireUser, createUserScopedClient } from '@/lib/auth/requireUser';
+import {
+  retrieveRelevantChunks,
+  formatRetrievedContext,
+  resolveFolderId,
+} from '@/lib/services/ai/retrieval';
 
 // Claude calls routinely exceed Vercel's short default function timeout.
 export const maxDuration = 60;
@@ -95,6 +100,26 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .join(', ');
 
+    // Pull related passages from elsewhere in the folder. Additive and
+    // fail-soft: with nothing indexed this is '' and the prompt is unchanged.
+    let retrievedBlock = '';
+    const supabase = createUserScopedClient(auth.token);
+    if (supabase) {
+      const folderId = await resolveFolderId(supabase, {
+        docId: highlight.sourceDocId,
+        referenceId: reference.id,
+      });
+      if (folderId) {
+        const chunks = await retrieveRelevantChunks(supabase, {
+          folderId,
+          query: `${highlight.text}\n\n${reference.text}`,
+          matchCount: 6,
+          excludeDocId: highlight.sourceDocId ?? null,
+        });
+        retrievedBlock = formatRetrievedContext(chunks);
+      }
+    }
+
     const system = `You are Lumi, an AI that helps researchers connect ideas across sources. The user has performed a cross-source synthesis operation: ${actionLabel}.
 
 Operation guidance: ${actionInstruction}
@@ -104,7 +129,7 @@ Always:
 - Mention both source locations when relevant (highlight: ${highlightLocation || 'unknown'}; ${referenceLabel}: ${referenceLocation || 'unknown'}).
 - Do not introduce unsupported claims or invent facts not present in the texts.
 - Be concise (3-6 short paragraphs or a tight bulleted list). Use Markdown.
-- When citing the reference, refer to it as [${referenceLabel}].`;
+- When citing the reference, refer to it as [${referenceLabel}].${retrievedBlock}`;
 
     const initialUserPrompt = `Highlighted passage from ${highlightLocation || 'the current document'}:
 """

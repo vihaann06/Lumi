@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isClaudeConfigured, requestClaude } from '@/lib/services/ai/claudeServer'
-import { requireUser } from '@/lib/auth/requireUser'
+import { requireUser, createUserScopedClient } from '@/lib/auth/requireUser'
+import {
+  retrieveRelevantChunks,
+  formatRetrievedContext,
+  resolveFolderId,
+} from '@/lib/services/ai/retrieval'
 
 // Synthesis sends up to 20K chars of draft plus references; the default
 // Vercel function timeout (10s hobby / 15s pro) is not enough.
@@ -75,6 +80,7 @@ export async function POST(req: NextRequest) {
       messages: { role: string; content: string }[]
       references: ReferenceContext[]
       documentContent?: string
+      folderId?: string
     } = body
 
     if (!isClaudeConfigured()) {
@@ -88,6 +94,34 @@ export async function POST(req: NextRequest) {
     const docContext = documentContent
       ? `\n\nThe user's current document draft:\n\n${documentContent.slice(0, mode === 'edit' ? 20000 : 3000)}`
       : ''
+
+    // The text that best describes what the user is asking for right now.
+    const retrievalQuery =
+      selectedText?.trim() ||
+      instruction?.trim() ||
+      [...(messages || [])].reverse().find((m) => m?.role === 'user')?.content ||
+      ''
+
+    // Additive and fail-soft: '' when nothing is indexed or the folder cannot
+    // be resolved, leaving the prompt byte-identical to before.
+    let retrievedBlock = ''
+    const supabase = createUserScopedClient(auth.token)
+    if (supabase && retrievalQuery) {
+      const folderId =
+        body?.folderId ||
+        (await resolveFolderId(supabase, {
+          referenceId: references?.[0]?.id ?? null,
+        }))
+
+      if (folderId) {
+        const chunks = await retrieveRelevantChunks(supabase, {
+          folderId,
+          query: retrievalQuery,
+          matchCount: 8,
+        })
+        retrievedBlock = formatRetrievedContext(chunks)
+      }
+    }
 
     if (actionMode) {
       if (!selectedText?.trim()) {
@@ -141,7 +175,7 @@ Selected text:
 ${selectedText}
 """`
         const evaluation = await requestClaude({
-          system: `${systemPrompt}${docContext}`,
+          system: `${systemPrompt}${docContext}${retrievedBlock}`,
           messages: [{ role: 'user', content: evalPrompt }],
           maxTokens: 1200,
           temperature: 0.2,
@@ -163,7 +197,7 @@ ${selectedText}
       const prompt = `${actionPromptMap[actionMode]}\n\nYou are assisting with grounded writing. Given a user-written passage and source references:\n- Always base your response ONLY on provided text and references.\n- Do not introduce unsupported claims.\n- Be explicit about how references relate to the passage.\n\nSelected text:\n\"\"\"\n${selectedText}\n\"\"\"`
 
       const content = await requestClaude({
-        system: `${systemPrompt}${docContext}`,
+        system: `${systemPrompt}${docContext}${retrievedBlock}`,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1500,
         temperature: 0.5,
@@ -199,7 +233,7 @@ User instruction:
 ${instruction}`
 
       const content = await requestClaude({
-        system: `${systemPrompt}${docContext}`,
+        system: `${systemPrompt}${docContext}${retrievedBlock}`,
         messages: [{ role: 'user', content: editPrompt }],
         maxTokens: 3500,
         temperature: 0.4,
@@ -228,7 +262,7 @@ ${instruction}`
     }
 
     const content = await requestClaude({
-      system: `${systemPrompt}${docContext}`,
+      system: `${systemPrompt}${docContext}${retrievedBlock}`,
       messages: (messages || [])
         .filter(
           (m): m is { role: 'user' | 'assistant'; content: string } =>
