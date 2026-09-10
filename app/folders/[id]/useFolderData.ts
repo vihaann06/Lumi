@@ -6,6 +6,8 @@ import { getCurrentUserId } from '@/lib/db/queries/auth'
 import { ensureWorkspaceForUser } from '@/lib/db/queries/workspaces'
 import { getFolderMeta, listFolderDocuments } from '@/lib/db/queries/folders'
 import { createDocument } from '@/lib/db/queries/documents'
+import { saveExtractedText } from '@/lib/db/queries/documentText'
+import { extractPdfText, isEmptyExtraction } from '@/lib/utils/pdfText'
 
 export type DocRow = {
   id: string
@@ -143,6 +145,29 @@ export function useFolderData(folderId: string | null) {
           path: thumbPath,
         })
         if (assetError) throw assetError
+      }
+
+      // Extract and persist the PDF's text so it can be chunked and embedded
+      // later. Deliberately non-fatal: a scan with no text layer, or a parse
+      // failure, should not cost the user their upload. Documents without
+      // extracted text simply stay out of the retrieval index.
+      try {
+        const extracted = await extractPdfText(file)
+        if (isEmptyExtraction(extracted.pages)) {
+          console.warn(
+            `No text layer found in "${effectiveName}"; skipping text extraction.`
+          )
+        } else {
+          await saveExtractedText(supabase, {
+            docId,
+            workspaceId,
+            accountId,
+            bucket,
+            extracted,
+          })
+        }
+      } catch (err) {
+        console.warn('PDF text extraction failed; upload kept.', err)
       }
 
       await fetchDocuments()
