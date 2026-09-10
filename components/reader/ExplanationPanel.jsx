@@ -5,6 +5,7 @@ import { Loader2, MessageSquare, FileText, Search, ChevronRight, ChevronLeft, Se
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { truncateTextForDisplay } from '@/lib/utils/highlightUtils';
+import ReferenceTextHoverPreview from '@/components/references/ReferenceTextHoverPreview';
 
 /**
  * Reader AI panel (chat-first, with legacy summary/reference support)
@@ -224,7 +225,13 @@ export default function ExplanationPanel({
                 className="flex items-center gap-1.5 text-xs bg-white rounded-md border border-slate-200 pl-2 pr-1 py-1"
               >
                 <span className="text-indigo-500 font-semibold">R{ref.referenceNumber}</span>
-                <span className="text-slate-500 max-w-[100px] truncate">{ref.selectedText}</span>
+                <ReferenceTextHoverPreview
+                  text={ref.selectedText || ''}
+                  layout="inline"
+                  subheading={`${ref.sourceDocTitle || 'Source'}${ref.pageNumber != null ? ` · p.${ref.pageNumber}` : ''}`}
+                >
+                  <span className="text-slate-500 max-w-[100px] truncate cursor-default">{ref.selectedText}</span>
+                </ReferenceTextHoverPreview>
                 <button
                   type="button"
                   onClick={() => onRemoveActiveChatRef?.(ref.id)}

@@ -13,11 +13,6 @@ type Props = {
   selectedReferenceId?: string | null
 }
 
-function truncate(text: string, max = 80) {
-  if (!text) return ''
-  return text.length > max ? text.slice(0, max).trimEnd() + '…' : text
-}
-
 export default function ReferenceTray({
   references,
   isLoading,
@@ -70,10 +65,10 @@ export default function ReferenceTray({
               <div
                 key={ref.id}
                 data-reference-id={ref.id}
-                className={`group rounded-xl border px-3 py-2 ${
+                className={`group rounded-xl border px-3 py-2 transition-shadow ${
                   ref.id === selectedReferenceId
-                    ? 'border-emerald-200 bg-emerald-50'
-                    : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
+                    ? 'border-emerald-200 bg-emerald-50 hover:shadow-md'
+                    : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-md'
                 }`}
                 draggable
                 onDragStart={(e) => {
@@ -94,8 +89,8 @@ export default function ReferenceTray({
                     <p className="text-[11px] text-slate-500 truncate">
                       {ref.pageNumber ? `Page ${ref.pageNumber}` : 'No page'}
                     </p>
-                    <p className="text-xs text-slate-600 mt-1 leading-snug">
-                      {truncate(ref.selectedText, 90)}
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-snug text-slate-600 line-clamp-3 group-hover:line-clamp-none group-hover:max-h-60 group-hover:overflow-y-auto group-hover:rounded-md group-hover:bg-white/80">
+                      {ref.selectedText?.trim() || '—'}
                     </p>
                   </div>
                   {onRemove && (

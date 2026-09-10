@@ -93,12 +93,14 @@ export function extractReferenceMentions(
 export async function synthesizeChat(
   messages: SynthesisMessage[],
   references: ReferenceContext[],
-  documentContent?: string
+  documentContent?: string,
+  folderId?: string
 ): Promise<string> {
   const data = await postAI('/api/ai/synthesize', {
     messages,
     references,
     documentContent,
+    folderId,
   })
 
   return data.content
@@ -107,13 +109,15 @@ export async function synthesizeChat(
 export async function synthesizeEditProposal(
   instruction: string,
   references: ReferenceContext[],
-  documentContent: string
+  documentContent: string,
+  folderId?: string
 ): Promise<EditProposal> {
   const data = await postAI('/api/ai/synthesize', {
     mode: 'edit',
     instruction,
     references,
     documentContent,
+    folderId,
   })
 
   if (!data?.proposal?.proposedContent) {
@@ -128,6 +132,7 @@ export async function synthesizeWriterSpanAction(args: {
   selectedText: string
   references: ReferenceContext[]
   documentContent: string
+  folderId?: string
 }): Promise<WriterSpanActionResult> {
   const data = await postAI('/api/ai/synthesize', args)
 

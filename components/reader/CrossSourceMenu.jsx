@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Link2, GitCompare, Scale } from 'lucide-react';
+import ReferenceTextHoverPreview from '@/components/references/ReferenceTextHoverPreview';
 
 const ACTIONS = [
   {
@@ -62,7 +63,8 @@ export default function CrossSourceMenu({
   if (!position) return null;
 
   const refLabel = reference?.referenceNumber ? `R${reference.referenceNumber}` : 'reference';
-  const refSnippet = (reference?.selectedText || reference?.text || '').slice(0, 90);
+  const fullRefText = (reference?.selectedText || reference?.text || '').trim();
+  const refSnippet = fullRefText.slice(0, 90);
 
   return (
     <div
@@ -84,7 +86,9 @@ export default function CrossSourceMenu({
           <span className="inline-flex items-center justify-center min-w-[28px] h-[20px] px-1.5 rounded-md bg-indigo-50 text-indigo-600 text-[11px] font-semibold">
             {refLabel}
           </span>
-          <p className="text-xs text-slate-600 leading-snug line-clamp-2">{refSnippet}</p>
+          <ReferenceTextHoverPreview text={fullRefText} layout="block" subheading="Referenced passage">
+            <p className="text-xs text-slate-600 leading-snug line-clamp-2 cursor-default">{refSnippet}{fullRefText.length > 90 ? '…' : ''}</p>
+          </ReferenceTextHoverPreview>
         </div>
       </div>
       <div className="p-2">

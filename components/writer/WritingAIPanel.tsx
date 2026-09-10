@@ -12,6 +12,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Reference } from '@/lib/types/references'
+import ReferenceTextHoverPreview from '@/components/references/ReferenceTextHoverPreview'
 import {
   synthesizeChat,
   synthesizeEditProposal,
@@ -37,6 +38,9 @@ type WritingAIPanelProps = {
   externalEvent?: { id: string; message: SynthesisMessage } | null
   externalLoading?: boolean
   onDropReference?: (event: React.DragEvent<HTMLDivElement>) => void
+  /** Scopes retrieval to this folder. Without it, chats with no attached
+   *  reference have no folder to search and silently skip retrieval. */
+  folderId?: string
 }
 
 export default function WritingAIPanel({
@@ -50,6 +54,7 @@ export default function WritingAIPanel({
   externalEvent,
   externalLoading = false,
   onDropReference,
+  folderId,
 }: WritingAIPanelProps) {
   const [messages, setMessages] = useState<SynthesisMessage[]>([])
   const [mode, setMode] = useState<'ask' | 'edit'>('ask')
@@ -113,7 +118,7 @@ export default function WritingAIPanel({
 
       try {
         const refCtx = refsToContext(activeRefs)
-        const aiContent = await synthesizeChat(updated, refCtx, documentContent)
+        const aiContent = await synthesizeChat(updated, refCtx, documentContent, folderId)
         setMessages([...updated, { role: 'assistant', content: aiContent }])
         consumeUsedReferences(aiContent, refCtx)
       } catch (err: any) {
@@ -134,7 +139,7 @@ export default function WritingAIPanel({
     setIsLoading(true)
     try {
       const refCtx = refsToContext(activeRefs)
-      const proposal = await synthesizeEditProposal(trimmed, refCtx, documentContent)
+      const proposal = await synthesizeEditProposal(trimmed, refCtx, documentContent, folderId)
       proposal.referenceMentions = extractReferenceMentions(proposal.proposedContent, refCtx)
       onProposeEdit(proposal)
       if (proposal.referenceMentions?.length) {
@@ -257,9 +262,15 @@ export default function WritingAIPanel({
                 }}
               >
                 <span className="text-indigo-500 font-semibold">R{ref.referenceNumber}</span>
-                <span className="text-slate-500 max-w-[100px] truncate">
-                  {truncate(ref.selectedText, 30)}
-                </span>
+                <ReferenceTextHoverPreview
+                  text={ref.selectedText}
+                  layout="inline"
+                  subheading={`${ref.sourceDocTitle || 'Source'}${ref.pageNumber != null ? ` · p.${ref.pageNumber}` : ''}`}
+                >
+                  <span className="text-slate-500 max-w-[100px] truncate cursor-default">
+                    {truncate(ref.selectedText, 30)}
+                  </span>
+                </ReferenceTextHoverPreview>
                 <button
                   type="button"
                   onClick={() => onRemoveActiveRef(ref.id)}

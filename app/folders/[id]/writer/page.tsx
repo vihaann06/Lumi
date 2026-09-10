@@ -645,6 +645,7 @@ function FolderWriteContent() {
           selectedText: selection.text,
           references: refCtx,
           documentContent: content,
+          folderId,
         })
 
         await persistWriterSpanProvenance({
@@ -851,6 +852,7 @@ function FolderWriteContent() {
             externalEvent={externalPanelEvent}
             externalLoading={isSelectionActionLoading}
             onDropReference={handleReferenceDrop}
+            folderId={folderId}
           />
         </div>
       </div>
