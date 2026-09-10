@@ -51,16 +51,41 @@ export async function getUserFromRequest(request: NextRequest): Promise<User | n
 }
 
 /**
+ * Builds a Supabase client that acts as the calling user, so row-level
+ * security applies to anything the route reads or writes on their behalf.
+ *
+ * Routes that touch user data must use this rather than the bare anon client:
+ * the anon client has no identity, so `auth.uid()` is null and every policy
+ * check fails (or, worse, would pass if a policy were ever written loosely).
+ */
+export function createUserScopedClient(accessToken: string): SupabaseClient | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) return null
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    global: {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  })
+}
+
+/**
  * Route guard. Returns either the authenticated user or the 401 response to
  * return from the handler:
  *
  *   const auth = await requireUser(request)
  *   if ('response' in auth) return auth.response
- *   // auth.user is available here
+ *   // auth.user and auth.token are available here
  */
 export async function requireUser(
   request: NextRequest
-): Promise<{ user: User } | { response: NextResponse }> {
+): Promise<{ user: User; token: string } | { response: NextResponse }> {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return {
       response: NextResponse.json(
@@ -70,8 +95,10 @@ export async function requireUser(
     }
   }
 
-  const user = await getUserFromRequest(request)
-  if (!user) {
+  const token = bearerToken(request)
+  const user = token ? await getUserFromRequest(request) : null
+
+  if (!token || !user) {
     return {
       response: NextResponse.json(
         { error: 'Unauthorized. Sign in to use Lumi AI features.' },
@@ -80,5 +107,5 @@ export async function requireUser(
     }
   }
 
-  return { user }
+  return { user, token }
 }

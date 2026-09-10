@@ -8,6 +8,7 @@ import { getFolderMeta, listFolderDocuments } from '@/lib/db/queries/folders'
 import { createDocument } from '@/lib/db/queries/documents'
 import { saveExtractedText } from '@/lib/db/queries/documentText'
 import { extractPdfText, isEmptyExtraction } from '@/lib/utils/pdfText'
+import { ingestDocumentInBackground } from '@/lib/services/ai/ingest'
 
 export type DocRow = {
   id: string
@@ -158,13 +159,19 @@ export function useFolderData(folderId: string | null) {
             `No text layer found in "${effectiveName}"; skipping text extraction.`
           )
         } else {
-          await saveExtractedText(supabase, {
+          const saved = await saveExtractedText(supabase, {
             docId,
             workspaceId,
             accountId,
             bucket,
             extracted,
           })
+
+          // Chunk and embed in the background; the upload is already complete
+          // as far as the user is concerned.
+          if (saved.ok) {
+            ingestDocumentInBackground(docId)
+          }
         }
       } catch (err) {
         console.warn('PDF text extraction failed; upload kept.', err)
