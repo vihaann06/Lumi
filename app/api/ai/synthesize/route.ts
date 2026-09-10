@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isClaudeConfigured, requestClaude } from '@/lib/services/ai/claudeServer'
+import { requireUser } from '@/lib/auth/requireUser'
+
+// Synthesis sends up to 20K chars of draft plus references; the default
+// Vercel function timeout (10s hobby / 15s pro) is not enough.
+export const maxDuration = 60
 
 interface ReferenceContext {
   id: string
@@ -50,6 +55,9 @@ GUIDELINES:
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireUser(req)
+    if ('response' in auth) return auth.response
+
     const body = await req.json()
     const {
       mode,

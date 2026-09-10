@@ -3,6 +3,8 @@
  * Sends a highlighted passage + reference + action verb to the AI backend.
  */
 
+import { postAI } from './apiClient';
+
 export type CrossSourceAction = 'connect' | 'compare' | 'contrast' | 'support';
 
 export const CROSS_SOURCE_ACTION_LABELS: Record<CrossSourceAction, string> = {
@@ -41,16 +43,7 @@ export async function crossSourceWithAI(args: {
   reference: CrossSourceReference;
   chatHistory?: { role: string; content: string }[];
 }): Promise<CrossSourceResult> {
-  const response = await fetch('/api/ai/cross-source', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error || 'Cross-source synthesis failed');
-  }
+  const data = await postAI('/api/ai/cross-source', args);
 
   return {
     response: data.response || '',

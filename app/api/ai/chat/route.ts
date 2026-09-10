@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isClaudeConfigured, requestClaude } from '@/lib/services/ai/claudeServer';
+import { requireUser } from '@/lib/auth/requireUser';
+
+// Claude calls routinely exceed Vercel's short default function timeout.
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireUser(request);
+    if ('response' in auth) return auth.response;
+
     const { selectedText, chatHistory = [], userMessage, docContext } = await request.json();
 
     if (!selectedText || !userMessage) {

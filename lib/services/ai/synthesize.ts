@@ -1,4 +1,5 @@
 import type { Reference } from '@/lib/types/references'
+import { postAI } from './apiClient'
 
 export interface SynthesisMessage {
   role: 'user' | 'assistant'
@@ -94,18 +95,12 @@ export async function synthesizeChat(
   references: ReferenceContext[],
   documentContent?: string
 ): Promise<string> {
-  const res = await fetch('/api/ai/synthesize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, references, documentContent }),
+  const data = await postAI('/api/ai/synthesize', {
+    messages,
+    references,
+    documentContent,
   })
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Synthesis request failed')
-  }
-
-  const data = await res.json()
   return data.content
 }
 
@@ -114,23 +109,13 @@ export async function synthesizeEditProposal(
   references: ReferenceContext[],
   documentContent: string
 ): Promise<EditProposal> {
-  const res = await fetch('/api/ai/synthesize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      mode: 'edit',
-      instruction,
-      references,
-      documentContent,
-    }),
+  const data = await postAI('/api/ai/synthesize', {
+    mode: 'edit',
+    instruction,
+    references,
+    documentContent,
   })
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Edit request failed')
-  }
-
-  const data = await res.json()
   if (!data?.proposal?.proposedContent) {
     throw new Error('No edit proposal returned')
   }
@@ -144,18 +129,8 @@ export async function synthesizeWriterSpanAction(args: {
   references: ReferenceContext[]
   documentContent: string
 }): Promise<WriterSpanActionResult> {
-  const res = await fetch('/api/ai/synthesize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-  })
+  const data = await postAI('/api/ai/synthesize', args)
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Writer span action failed')
-  }
-
-  const data = await res.json()
   return {
     content: data?.content || '',
     groundednessScore:

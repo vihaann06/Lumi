@@ -1,20 +1,7 @@
 /**
- * AI service client (server-routed).
+ * AI service client (server-routed, authenticated).
  */
-const postJSON = async (url: string, body: Record<string, any>) => {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error || 'AI request failed');
-  }
-
-  return data;
-};
+import { postAI } from './apiClient';
 
 /**
  * Chat with AI about selected text with conversation history
@@ -40,7 +27,7 @@ export const chatWithAI = async (
     }>;
   }
 ) => {
-  const data = await postJSON('/api/ai/chat', {
+  const data = await postAI('/api/ai/chat', {
     selectedText,
     chatHistory,
     userMessage,

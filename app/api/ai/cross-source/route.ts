@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isClaudeConfigured, requestClaude } from '@/lib/services/ai/claudeServer';
+import { requireUser } from '@/lib/auth/requireUser';
+
+// Claude calls routinely exceed Vercel's short default function timeout.
+export const maxDuration = 60;
 
 type CrossSourceAction = 'connect' | 'compare' | 'contrast' | 'support';
 
@@ -26,6 +30,9 @@ const isValidAction = (value: unknown): value is CrossSourceAction =>
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireUser(request);
+    if ('response' in auth) return auth.response;
+
     const body = await request.json();
     const {
       action,
